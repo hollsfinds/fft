@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build 2026-07-03b -->
+<!-- build 2026-07-03c -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#FCFCFA">
@@ -1183,6 +1183,10 @@ function moneyDateDue(){ // the occurrence that's due (not yet completed), or nu
 /* per-cycle walk-through progress: survives wandering off to other tabs
    mid-date (and closing the app). Resets when a new cycle starts or on finish. */
 function mdCycleKey(){ const md=STATE.settings.moneyDate; const p=(md&&md.freq)?mdPrev(md,new Date()):null; return p?isoLocal(p):"adhoc"; }
+function setupIncomplete(){
+  return !!(STATE.setupTracker&&STATE.setupTracker.skipped)
+    && !(STATE.accounts.length && STATE.settings.moneyDate && STATE.settings.moneyDate.freq);
+}
 function mdProg(){
   const key=mdCycleKey();
   if(!STATE.mdProgress||STATE.mdProgress.cycle!==key) STATE.mdProgress={cycle:key,done:[]};
@@ -1268,7 +1272,7 @@ function actionItems(){
       items.push({key:"moneydate",hot:true,label:"Have your first Money Date!",sub:"Ten guided minutes: the whole app in one loop",go:()=>{CURRENT="moneydate";render();}});
     else
       items.push({key:"moneydate",label:days<1?"It's Money Date day":`Money Date is ${days} day${days>1?"s":""} overdue`,sub:"Ten minutes keeps the books honest",go:()=>{CURRENT="moneydate";render();}});
-  } else if(!STATE.settings.moneyDate||!STATE.settings.moneyDate.freq){
+  } else if((!STATE.settings.moneyDate||!STATE.settings.moneyDate.freq) && !(STATE.setupTracker&&STATE.setupTracker.skipped)){
     items.push({key:"mdsetup",label:"Pick your Money Date rhythm",sub:"A recurring ten minutes keeps the books honest",go:()=>{CURRENT="settings";render();}});
   }
   if(STATE.settings.cashIncome&&STATE.transactions.length&&!snoozedUntil("cash"))
@@ -1616,6 +1620,14 @@ let MD_SESSION=false;   // a coached Money Date is mid-flight (session only)
 function render(){ renderNav(); const s=$("#screen"); s.innerHTML="";
   ({dash:screenDash,txns:screenTxns,accounts:screenAccounts,taxes:screenTaxes,
     reports:screenReports,moneydate:screenMoneyDate,settings:screenSettings}[CURRENT]||screenDash)(s);
+  // SETUP BAR: unfinished setup follows the user around until it's done
+  // (clears on wizard finish OR when the essentials get covered manually)
+  if(setupIncomplete() && CURRENT!=="moneydate"){
+    s.prepend(el(`<div class="card" style="background:color-mix(in srgb, var(--coral) 12%, var(--white));border:2px solid var(--coral);padding:10px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span class="small" style="min-width:0"><b style="font-family:var(--font-head)">⚠ Setup isn't finished:</b> your books are missing pieces, and your first Money Date is waiting on them. About two minutes!</span>
+      <button class="btn coral sm" id="setupbar-go" style="margin-left:auto;flex:0 0 auto">Finish my setup</button></div>`));
+    $("#setupbar-go",s).onclick=()=>resumeOnboarding();
+  }
   // COACH BAR: mid-Money-Date, every other screen shows the current step and
   // the way back so the hand never lets go
   if(MD_SESSION && CURRENT!=="moneydate"){
@@ -3367,6 +3379,15 @@ async function resetApp(){
 
 /* ---------------- MONEY DATE (weekly wizard) ------------------------- */
 function screenMoneyDate(s){
+  // setup unfinished = the date can't work yet; the Coach waits behind a gate
+  if(setupIncomplete()){
+    s.appendChild(el(`<div class="card" style="border:2px solid var(--coral)">
+      <h2>Your Coach is ready. The books aren't! 💛</h2>
+      <p class="small">A Money Date runs on the pieces from setup: your accounts, your categories, your rhythm. There's about two minutes left. Finish it and I'll walk you through your first date one glowing step at a time.</p>
+      <button class="btn coral" id="md-finishsetup" style="margin-top:8px">Finish my setup →</button></div>`));
+    $("#md-finishsetup",s).onclick=()=>resumeOnboarding();
+    return;
+  }
   const rc=reviewQueueCount();
   s.appendChild(el(`<div class="talkback">${esc(talkback(STATE.transactions.length?"saveaside":"empty"))}</div>`));
   const md=STATE.settings.moneyDate||{};
@@ -4086,6 +4107,10 @@ function renderOB(){
     inner=`<h1>Hi, I'm your finance sidekick 💛</h1>
       <div class="helper"><span class="lead">First things first, who am I working with?</span>
         Tell me your name and what you call your business. I'll use them to keep things personal (and honestly, a little less boring) the whole way through.</div>
+      <div class="card" style="border:2px solid var(--coral);background:color-mix(in srgb, var(--coral) 8%, var(--white));padding:12px 14px;margin-bottom:12px">
+        <b style="font-family:var(--font-head)">Worth finishing in one sitting (about 5 minutes)</b>
+        <p class="small" style="margin:4px 0 0">Every step builds a piece your books can't run without: accounts, categories, your tax set-aside. The moment you finish, your <b>Coach</b> takes over and walks you through your first Money Date, one step at a time. That's where it all clicks!</p>
+      </div>
       <div class="card">
         <label class="fld"><span>Your first name</span><input type="text" id="ob-uname" value="${esc(OB.data.userName||"")}" placeholder="What should I call you?"></label>
         <label class="fld"><span>Business name</span><input type="text" id="ob-bname" value="${esc(OB.data.bizName||"")}" placeholder="What do you call it?"></label>
@@ -4425,6 +4450,7 @@ function skipSetupModal(step){
     <p class="small" style="margin-top:10px">${resume
       ?"Everything you've entered is saved, and the Home to-do brings you back to this exact step."
       :"Everything you've entered so far is saved, and a to-do on your Home screen picks up right where you left off. One thing to know: exiting now stores your books on this device <b>without a PIN</b> (not encrypted). You can add a PIN anytime in Settings."}</p>
+    <p class="tiny muted" style="margin-top:6px">Your first Money Date (Coach included!) unlocks the moment setup is done.</p>
     <button class="btn coral block" id="sk-stay">Keep going</button>
     <button class="btn ghost block" id="sk-go" style="margin-top:8px">Exit to Home</button>`);
   $("#sk-stay",m.o).onclick=()=>m.close();
