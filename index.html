@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build 2026-07-03d -->
+<!-- build 2026-07-03s -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#FCFCFA">
@@ -328,6 +328,12 @@ html{touch-action:manipulation}
 .txnhead{display:flex;align-items:center;gap:10px;padding:7px 26px 5px;font-family:var(--font-head);font-size:.66rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
 .txn .amt.in{color:var(--good)}
 .txn input[type=checkbox]{width:18px;height:18px;flex:0 0 auto}
+/* grouped type-to-search panel (bulk assign + any future category search):
+   income streams and expenses NEVER blur together, each block wears a header */
+.catsug{position:absolute;top:calc(100% + 4px);left:0;min-width:100%;width:max-content;max-width:340px;max-height:300px;overflow-y:auto;background:var(--white);border:1.5px solid var(--line);border-radius:10px;box-shadow:0 8px 26px rgba(34,58,78,.18);z-index:130;text-align:left}
+.catsug-h{font-family:var(--font-head);font-size:.62rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);background:var(--cream-2);padding:6px 10px 4px;position:sticky;top:0}
+.catsug-i{padding:7px 10px;font-size:.85rem;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.catsug-i:hover{background:var(--cream)}
 /* CSV import column-mapping: one aligned grid, selects share a baseline */
 .maprow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
 .maprow .fld{display:flex;flex-direction:column;margin-bottom:0;min-width:0}
@@ -445,7 +451,7 @@ html{touch-action:manipulation}
     <p class="small"><b>Two rules that will save your life:</b></p>
     <p class="small">1. <b>Back up regularly.</b> Settings → Back Up Now saves a file you keep. If you clear your browser, switch to a new device, or forget your PIN, that backup is the ONLY way to get your numbers back.</p>
     <p class="small">2. <b>If you set a PIN, don't lose it.</b> A PIN is optional, but once set your data is encrypted with it. No PIN, no way in, not even for me. Lost PIN = restore from your backup file.</p>
-    <p class="disc">This app is a tracking + estimating tool. It is not tax advice, and I'm not your accountant. Anything tax-related is an estimate to bring to your CPA.</p>
+    <p class="disc">This app is a tracking + estimating tool. It is not tax advice, and I'm not your accountant. Anything tax-related is an estimate to bring to your accountant.</p>
     <p class="tiny"><a href="#" id="fl-tos">Terms of Service</a> · <a href="#" id="fl-priv">Privacy Policy</a></p>
     <label class="fld" style="display:flex;gap:10px;align-items:flex-start;margin-top:10px">
       <input type="checkbox" id="ackbox" style="width:20px;height:20px;flex:0 0 auto;margin-top:2px">
@@ -465,7 +471,7 @@ html{touch-action:manipulation}
   <div class="pindisplay" id="pindisp"></div>
   <div class="keypad" id="keypad"></div>
   <button class="btn ghost sm" id="restorefromlock" style="margin-top:22px">Forgot PIN? Restore from backup</button>
-  <button class="btn sm" id="resetfromlock" style="margin-top:44px;background:var(--bad);color:#fff">⚠ Start over (erase this device)</button>
+  <button class="btn sm" id="resetfromlock" style="margin-top:44px;background:var(--bad);color:#fff">⚠ Start over (erase everything on this device)</button>
 </div>
 
 <!-- ================= MAIN APP ================= -->
@@ -530,7 +536,7 @@ const CONFIG_YEARS = {
 };
 const CONFIG = {
   setAsideDefaultPct: 30,          // combined income + SE, editable by user
-  disclaimer: "Estimate only. Not tax advice. Confirm with your CPA.",
+  disclaimer: "Estimate only. Not tax advice. Confirm with your accountant.",
   // ONE place to update when the product name + URL are finalized:
   // every report footer (CSV + PDF) pulls from here.
   appName: "FFT",
@@ -562,6 +568,7 @@ function mileRateFor(dateStr){
 function dueDatesFor(year){ return [`${year}-04-15`,`${year}-06-15`,`${year}-09-15`,`${year+1}-01-15`]; }
 // human date for due-date displays: "Apr 15, 2026" beats "2026-04-15"
 function fmtDue(d){ return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }
+function fmtStamp(ts){ return new Date(ts).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); }   // prose dates: one style everywhere
 
 const SCHEMA_VERSION = 1;
 
@@ -1187,6 +1194,25 @@ function setupIncomplete(){
   return !!(STATE.setupTracker&&STATE.setupTracker.skipped)
     && !(STATE.accounts.length && STATE.settings.moneyDate && STATE.settings.moneyDate.freq);
 }
+/* SMART TIME ESTIMATE for the Money Date. Two stages:
+   1) no history yet -> estimate from the actual workload (review pile size,
+      accounts needing imports, cash/miles steps enabled)
+   2) after 2+ finished dates -> median of the real measured durations
+   Durations are recorded finishMD-side; visits that span days (paused dates)
+   are filtered out so they can't pollute the estimate. */
+function mdEstimate(){
+  const hist=STATE.mdHistory||[];
+  if(hist.length>=2){
+    const s=[...hist].sort((a,b)=>a-b);
+    const med=s[Math.floor(s.length/2)];
+    return Math.max(5, Math.round(med/5)*5);
+  }
+  const rc=reviewQueueCount();
+  const since=STATE.lastMoneyDate||0;
+  const staleAccts=STATE.accounts.filter(a=>!STATE.transactions.some(t=>t.accountId===a.id&&(t.createdAt||0)>since)).length;
+  const m=3 + staleAccts*1.5 + rc*0.15 + (STATE.settings.cashIncome?1:0) + (STATE.settings.tracksMiles!==false?1:0);
+  return Math.max(5, Math.round(m/5)*5);
+}
 function mdProg(){
   const key=mdCycleKey();
   if(!STATE.mdProgress||STATE.mdProgress.cycle!==key) STATE.mdProgress={cycle:key,done:[]};
@@ -1269,9 +1295,9 @@ function actionItems(){
   if(mdOcc){
     const days=Math.floor((Date.now()-new Date(mdOcc.getFullYear(),mdOcc.getMonth(),mdOcc.getDate()).getTime())/86400000);
     if(!STATE.lastMoneyDate)
-      items.push({key:"moneydate",hot:true,label:"Have your first Money Date!",sub:"Ten guided minutes: the whole app in one loop",go:()=>{CURRENT="moneydate";render();}});
+      items.push({key:"moneydate",hot:true,label:"Have your first Money Date!",sub:`About ${mdEstimate()} guided minutes: the whole app in one loop`,go:()=>{CURRENT="moneydate";render();}});
     else
-      items.push({key:"moneydate",label:days<1?"It's Money Date day":`Money Date is ${days} day${days>1?"s":""} overdue`,sub:"Ten minutes keeps the books honest",go:()=>{CURRENT="moneydate";render();}});
+      items.push({key:"moneydate",label:days<1?"It's Money Date day":`Money Date is ${days} day${days>1?"s":""} overdue`,sub:`About ${mdEstimate()} minutes keeps the books honest`,go:()=>{CURRENT="moneydate";render();}});
   } else if((!STATE.settings.moneyDate||!STATE.settings.moneyDate.freq) && !(STATE.setupTracker&&STATE.setupTracker.skipped)){
     items.push({key:"mdsetup",label:"Pick your Money Date rhythm",sub:"A recurring ten minutes keeps the books honest",go:()=>{CURRENT="settings";render();}});
   }
@@ -1609,7 +1635,7 @@ function renderNav(){
   bar.appendChild(renderCalBox());
   const bk=el(`<div class="sb-backup">
     <button id="sb-bk">Back up now</button>
-    <div class="tiny ${STATE.lastBackup?"muted":""}" style="text-align:center;margin-top:4px;${STATE.lastBackup?"":"color:var(--warn);font-weight:600"}">${STATE.lastBackup?"Last backup: "+new Date(STATE.lastBackup).toLocaleDateString():"No backup yet"}</div></div>`);
+    <div class="tiny ${STATE.lastBackup?"muted":""}" style="text-align:center;margin-top:4px;${STATE.lastBackup?"":"color:var(--warn);font-weight:600"}">${STATE.lastBackup?"Last backup: "+fmtStamp(STATE.lastBackup):"No backup yet"}</div></div>`);
   bk.querySelector("#sb-bk").onclick=()=>doBackup();
   bar.appendChild(bk);
 }
@@ -1617,13 +1643,15 @@ function closeDrawer(){ const sb=$("#sidebar"); if(sb)sb.classList.remove("open"
 function openDrawer(){ $("#sidebar").classList.add("open"); $("#sboverlay").classList.add("show"); }
 let LAST_TAB=null;
 let MD_SESSION=false;   // a coached Money Date is mid-flight (session only)
+let MD_OPEN=new Set();  // coach mode: completed steps the user tapped back open
+let TXN_SORT={key:"date",dir:-1};   // transaction table sort: any column, tap the header
 function render(){ renderNav(); const s=$("#screen"); s.innerHTML="";
   ({dash:screenDash,txns:screenTxns,accounts:screenAccounts,taxes:screenTaxes,
     reports:screenReports,moneydate:screenMoneyDate,settings:screenSettings}[CURRENT]||screenDash)(s);
   // SETUP BAR: unfinished setup follows the user around until it's done
   // (clears on wizard finish OR when the essentials get covered manually)
   if(setupIncomplete() && CURRENT!=="moneydate"){
-    s.prepend(el(`<div class="card" style="background:color-mix(in srgb, var(--coral) 12%, var(--white));border:2px solid var(--coral);padding:10px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    s.prepend(el(`<div class="card" style="background:color-mix(in srgb, var(--coral) 12%, var(--white));border:2px solid var(--coral);padding:10px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:26px;position:relative;z-index:31">
       <span class="small" style="min-width:0"><b style="font-family:var(--font-head)">⚠ Setup isn't finished:</b> your books are missing pieces, and your first Money Date is waiting on them. About two minutes!</span>
       <button class="btn coral sm" id="setupbar-go" style="margin-left:auto;flex:0 0 auto">Finish my setup</button></div>`));
     $("#setupbar-go",s).onclick=()=>resumeOnboarding();
@@ -1636,7 +1664,7 @@ function render(){ renderNav(); const s=$("#screen"); s.innerHTML="";
     if(idx<0) MD_SESSION=false;
     else{
       const DIR={fresh:"bring in what's new",cash:"add any cash payments",review:"sort the pile: business, personal, or ask my accountant",miles:"log your business trips",backup:"make your backup",glance:"tap View reports to finish"};
-      s.prepend(el(`<div class="card" style="background:color-mix(in srgb, var(--coral) 12%, var(--white));border:2px solid var(--coral);padding:10px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      s.prepend(el(`<div class="card" style="background:color-mix(in srgb, var(--coral) 12%, var(--white));border:2px solid var(--coral);padding:10px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:26px;position:relative;z-index:31">
         <span class="small" style="min-width:0"><b style="font-family:var(--font-head)">💛 Money Date · step ${idx+1} of ${stat.length}:</b> ${DIR[stat[idx].id]||stat[idx].title}, then head back!</span>
         <button class="btn coral sm" id="mdbar-back" style="margin-left:auto;flex:0 0 auto">← Back to my date</button>
         <a href="#" id="mdbar-off" class="tiny" style="color:var(--muted);flex:0 0 auto">turn coaching off</a></div>`));
@@ -1697,7 +1725,7 @@ function screenDash(s){
   t3.onclick=goPL; g1.appendChild(t3);
   const cpa=cpaTotal();
   const stack=el(`<div style="display:flex;flex-direction:column;gap:12px">
-    <div class="stat click" id="hm-cash" style="flex:1;padding:12px 16px"><div class="k" style="white-space:nowrap">Cash Flow - <span class="num">${yr}</span> so far</div>
+    <div class="stat click" id="hm-cash" style="flex:1;padding:12px 16px"><div class="k" style="white-space:nowrap">Cash In vs Out - <span class="num">${yr}</span> so far</div>
       <div class="v ${ytd.cashFlow>=0?"":"neg"}" style="font-size:1.2rem">${money0(ytd.cashFlow)}</div>
       <div class="tiny muted">${moName} so far: <b style="color:${mtd.cashFlow>=0?"var(--ink)":"var(--bad)"}">${money0(mtd.cashFlow)}</b></div></div>
     <div class="stat click" id="hm-tax" style="flex:1;padding:12px 16px"><div class="k">${cpa!=null?`<span class="num">${yr}</span> Set-aside (CPA)`:`<span class="num">${yr}</span> Est. tax set-aside`}</div>
@@ -1767,7 +1795,12 @@ function screenDash(s){
 /* category lifecycle: unused categories (pack OR custom) can be deleted;
    in-use ones can only be RETIRED (hidden from pickers, history intact).
    At least one active income stream must always remain. */
-const activeCats=()=>STATE.categories.filter(c=>!c.retired);
+// APP-WIDE RULE (Holly's): every category and account LIST the user picks
+// from is alphabetical. Semantic option sets (business/personal/ask, type
+// pills) and report rows (biggest-first) stay as designed.
+const byLabelAZ=(a,b)=>a.label.localeCompare(b.label);
+const byNickAZ=(a,b)=>(a.nickname||"").localeCompare(b.nickname||"");
+const activeCats=()=>STATE.categories.filter(c=>!c.retired).sort(byLabelAZ);
 function catInUse(id){ return STATE.transactions.some(t=>t.splits.some(sp=>sp.category===id)); }
 function catLabel(catKey){
   if(!catKey || catKey==="__uncat") return "Uncategorized";
@@ -1906,9 +1939,9 @@ function screenTxns(s){
     </div>
     <div id="filterpanel" class="${open?"":"hidden"}" style="margin-top:10px">
       <div class="row">
-        <label class="fld"><span>Account</span><select id="f-acct"><option value="all">All</option>${STATE.accounts.map(a=>`<option value="${a.id}" ${TXN_FILTER.acct===a.id?"selected":""}>${esc(a.nickname)}</option>`).join("")}</select></label>
+        <label class="fld"><span>Account</span><select id="f-acct"><option value="all">All</option>${[...STATE.accounts].sort(byNickAZ).map(a=>`<option value="${a.id}" ${TXN_FILTER.acct===a.id?"selected":""}>${esc(a.nickname)}</option>`).join("")}</select></label>
         <label class="fld"><span>Type</span><select id="f-type"><option value="all">All</option>${[["expense","Expense"],["income","Income"],["transfer","Transfer"],["draw","Owner draw"]].map(([v,l])=>`<option value="${v}" ${TXN_FILTER.type===v?"selected":""}>${l}</option>`).join("")}</select></label>
-        <label class="fld"><span>Category</span><select id="f-cat"><option value="all">All</option><option value="__none" ${TXN_FILTER.cat==="__none"?"selected":""}>Uncategorized</option>${STATE.categories.map(c=>`<option value="${c.id}" ${TXN_FILTER.cat===c.id?"selected":""}>${esc(c.label)}</option>`).join("")}</select></label>
+        <label class="fld"><span>Category</span><select id="f-cat"><option value="all">All</option><option value="__none" ${TXN_FILTER.cat==="__none"?"selected":""}>Uncategorized</option>${(()=>{const op=c=>`<option value="${c.id}" ${TXN_FILTER.cat===c.id?"selected":""}>${esc(c.label)}${c.retired?" (retired)":""}</option>`;const inc=[...STATE.categories].filter(c=>c.schedC==="income").sort(byLabelAZ);const exp=[...STATE.categories].filter(c=>c.schedC!=="income").sort(byLabelAZ);return `<optgroup label="Income streams">${inc.map(op).join("")}</optgroup><optgroup label="Expense categories">${exp.map(op).join("")}</optgroup>`;})()}</select></label>
       </div>
       <div class="row">
         <label class="fld"><span>From date</span><input type="date" id="f-from" value="${TXN_FILTER.from}"></label>
@@ -1932,29 +1965,36 @@ function screenTxns(s){
     <label class="small" style="display:flex;gap:7px;align-items:center;margin:0;cursor:pointer;color:var(--muted)"><input type="checkbox" id="selall" style="width:17px;height:17px;flex:0 0 auto">Select all (<span id="sa-n">0</span>)</label>
     <b id="bulkn" class="small"></b>
     <div style="margin-left:auto;display:flex;gap:9px;flex-wrap:wrap;align-items:center">
-      <select id="bulkcat" class="hidden" style="width:300px;max-width:100%;padding:8px 10px;font-size:.85rem;border-radius:9px">
-        <option value="" selected>Assign one category…</option>
-        ${activeCats().filter(c=>c.schedC!=="income").map(c=>`<option value="${c.id}">${esc(c.label)}</option>`).join("")}
-      </select>
+      <span style="position:relative;display:inline-block;max-width:100%"><input id="bulkcat" class="hidden" placeholder="Assign one category… (type to search)" autocomplete="off" style="width:300px;max-width:100%;padding:8px 10px;font-size:.85rem;border-radius:9px"></span>
       <button class="btn sm coral" data-bulk="approve">✓ Approve for Business</button>
       <button class="btn sm ghost" data-bulk="personal">Not business</button>
     </div></div>`);
   bar.querySelectorAll("[data-bulk]").forEach(b=>b.onclick=()=>bulkAction(b.dataset.bulk));
+  const bcIn=$("#bulkcat",bar);
+  wireCatSearch(bcIn, ()=>bcIn._groups||[], ()=>{});
   bar.querySelector("#selall").onchange=e=>{
     if(e.target.checked) TXN_SEL=new Set(filteredTxns().map(t=>t.id));
     else TXN_SEL.clear();
     renderTxnList();
   };
   stick.appendChild(bar);
-  stick.appendChild(el(`<div class="txnhead">
+  const ARW=k=>TXN_SORT.key===k?(TXN_SORT.dir>0?" ▲":" ▼"):"";
+  const hd=el(`<div class="txnhead">
     <span style="flex:0 0 18px"></span>
-    <span style="flex:0 0 100px">Status</span>
-    <span style="flex:0 0 92px">Date</span>
-    <span style="flex:1;min-width:0">Description</span>
-    <span style="flex:0 0 110px">Account</span>
-    <span style="flex:0 0 185px">Category</span>
-    <span style="flex:0 0 120px;text-align:right">Amount</span>
-  </div>`));
+    <span data-sort="status" style="flex:0 0 100px;cursor:pointer">Status${ARW("status")}</span>
+    <span data-sort="date" style="flex:0 0 92px;cursor:pointer">Date${ARW("date")}</span>
+    <span data-sort="desc" style="flex:1;min-width:0;cursor:pointer">Description${ARW("desc")}</span>
+    <span data-sort="acct" style="flex:0 0 110px;cursor:pointer">Account${ARW("acct")}</span>
+    <span data-sort="cat" style="flex:0 0 185px;cursor:pointer">Category${ARW("cat")}</span>
+    <span data-sort="amt" style="flex:0 0 120px;text-align:right;cursor:pointer">Amount${ARW("amt")}</span>
+  </div>`);
+  hd.querySelectorAll("[data-sort]").forEach(sp=>sp.onclick=()=>{
+    const k=sp.dataset.sort;
+    if(TXN_SORT.key===k) TXN_SORT.dir*=-1;
+    else TXN_SORT={key:k, dir:k==="date"||k==="amt"?-1:1};
+    render();
+  });
+  stick.appendChild(hd);
   s.appendChild(stick);
   const list=el(`<div class="card" id="txnlist"></div>`); s.appendChild(list);
   renderTxnList();
@@ -1989,7 +2029,17 @@ function filteredTxns(){
   const min=parseFloat(F.min), max=parseFloat(F.max);
   if(!isNaN(min)) ts=ts.filter(t=>Math.abs(t.amount)>=min);
   if(!isNaN(max)) ts=ts.filter(t=>Math.abs(t.amount)<=max);
-  return ts.sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt-a.createdAt);
+  const S=TXN_SORT;
+  const sv=t=>{const pr=t.splits[0];switch(S.key){
+    case "status": return t.splits.length>1?"split":(((TAG_STATES[pr.tagState]||{}).label)||"").toLowerCase();
+    case "desc":   return (t.description||"").toLowerCase();
+    case "acct":   return acctName(t.accountId).toLowerCase();
+    case "cat":    return t.splits.length>1?"~split":(pr.category?catLabel(pr.category).toLowerCase():"~"+(pr.tagState||""));
+    case "amt":    return Math.abs(t.amount)||0;
+    default:       return t.date;
+  }};
+  return ts.sort((a,b)=>{const A=sv(a),B=sv(b);const c=A<B?-1:A>B?1:0;
+    return c*S.dir || b.date.localeCompare(a.date) || b.createdAt-a.createdAt;});
 }
 function renderTxnList(){
   const list=$("#txnlist"); if(!list)return; list.innerHTML="";
@@ -2025,18 +2075,18 @@ function renderTxnList(){
       <span class="acol" title="${esc(acctName(t.accountId))}">${esc(acctName(t.accountId))}</span>
       ${inlineable?`<select class="inline-cat" style="flex:0 0 185px;width:185px;padding:5px 8px;font-size:.8rem;border-radius:8px">
         ${isInc?`<optgroup label="Income streams">${incCats.map(c=>`<option value="${c.id}" ${inlineSel===c.id?"selected":""}>${esc(c.label)}</option>`).join("")}</optgroup>
-        <optgroup label="Refund of an expense">${refundCats.map(c=>`<option value="${c.id}" ${inlineSel===c.id?"selected":""}>${esc(c.label)}</option>`).join("")}</optgroup>`
+        <optgroup label="↩ Refund of an expense">${refundCats.map(c=>`<option value="${c.id}" ${inlineSel===c.id?"selected":""}>${esc(c.label)}</option>`).join("")}</optgroup>`
         :`<option value="" ${!inlineSel?"selected":""}>Category…</option>
-        ${expCats.map(c=>`<option value="${c.id}" ${inlineSel===c.id?"selected":""}>${esc(c.label)}</option>`).join("")}`}
+        <optgroup label="Expense categories">${expCats.map(c=>`<option value="${c.id}" ${inlineSel===c.id?"selected":""}>${esc(c.label)}</option>`).join("")}</optgroup>`}
         <option value="__newcat">+ New ${isInc?"income stream":"category"}…</option>
         ${curRet?`<option value="${curRet.id}" selected>${esc(curRet.label)} (retired)</option>`:""}
         <optgroup label="Not sure?">
-          <option value="__askcpa" ${inlineSel==="__askcpa"?"selected":""}>Ask my accountant</option>
+          <option value="__askcpa" ${inlineSel==="__askcpa"?"selected":""}>Ask My Accountant</option>
         </optgroup>
         <optgroup label="Not income or expense">
           <option value="__transfer" ${staged==="__transfer"?"selected":""}>Transfer between my accounts</option>
           ${isInc?"":`<option value="__ccpay">Credit card payment…</option>`}
-          ${isInc?"":`<option value="__draw" ${staged==="__draw"?"selected":""}>Owner draw / paying myself</option>`}
+          ${isInc?"":`<option value="__draw" ${staged==="__draw"?"selected":""}>Owner draw / pay myself</option>`}
         </optgroup>
       </select>`:`<span class="splitsum" style="flex:0 0 185px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem;color:var(--muted)" title="${esc(splitCats)}">${esc(splitCats)}</span>`}
       <div class="amt ${t.bucketType==='income'?'in':''}">${t.bucketType==='income'?'+':''}${money(t.amount)}</div></div>`);
@@ -2056,17 +2106,91 @@ function renderTxnList(){
   });
   updateBulk();
 }
+/* reusable: attach a grouped, filtered suggestion panel to a text input.
+   groupsFn -> [{label, items:[{id,label}]}]; onPick(cat) fires on choose. */
+function wireCatSearch(inp, groupsFn, onPick){
+  let panel=null;
+  const close=()=>{ if(panel){panel.remove();panel=null;} };
+  const open=()=>{
+    close();
+    if(inp.disabled)return;
+    const q=inp.value.trim().toLowerCase();
+    const groups=groupsFn()||[];
+    panel=el(`<div class="catsug"></div>`);
+    let any=false;
+    groups.forEach(g=>{
+      const hits=g.items.filter(c=>c.label.toLowerCase().includes(q));
+      if(!hits.length)return;
+      any=true;
+      panel.appendChild(el(`<div class="catsug-h">${g.label}</div>`));
+      hits.forEach(c=>{
+        const it=el(`<div class="catsug-i">${esc(c.label)}</div>`);
+        it.onmousedown=e=>{ e.preventDefault(); inp.value=c.label; onPick(c); close(); };
+        panel.appendChild(it);
+      });
+    });
+    if(!any) panel.appendChild(el(`<div class="catsug-i" style="color:var(--muted);cursor:default">No matches</div>`));
+    inp.parentElement.appendChild(panel);
+  };
+  inp.addEventListener("input",open);
+  inp.addEventListener("focus",open);
+  inp.addEventListener("blur",()=>setTimeout(close,150));
+}
+/* inbox zero while a coached Money Date is running: celebrate, then walk
+   the user straight back to their date so the glow can move on */
+function inboxZeroReturn(){
+  if(MD_SESSION && CURRENT!=="moneydate"){ CURRENT="moneydate"; render(); window.scrollTo(0,0); }
+}
 function updateBulk(){const bar=$("#bulkbar");if(!bar)return;
   const n=TXN_SEL.size;
   $("#bulkn").textContent = n? `· ${n} selected` : "";
   bar.querySelectorAll("[data-bulk]").forEach(b=>b.disabled=!n);
-  const bc=$("#bulkcat"); if(bc){ bc.classList.toggle("hidden", n<2); if(n<2)bc.value=""; }
+  const bc=$("#bulkcat"); if(bc){
+    bc.classList.toggle("hidden", n<2);
+    if(n<2){ bc.value=""; }
+    else{
+      const sel=[...TXN_SEL].map(id=>STATE.transactions.find(t=>t.id===id)).filter(Boolean);
+      const hasInc=sel.some(t=>t.bucketType==="income");
+      const hasOut=sel.some(t=>t.bucketType!=="income");
+      if(hasInc&&hasOut){ bc.disabled=true; bc.value=""; bc.placeholder="Money in AND out selected: assign them separately"; bc._map={}; bc._groups=[]; }
+      else{
+        bc.disabled=false; bc.placeholder="Assign one category… (type to search)";
+        const incCats=activeCats().filter(c=>c.schedC==="income");
+        const expCats=activeCats().filter(c=>c.schedC!=="income");
+        bc._map={};
+        const reg=list=>list.forEach(c=>bc._map[c.label]=c.id);
+        if(hasInc){
+          // money-in is never a Customer Refund (Holly's rule): refunds of an
+          // expense go back to the original expense category
+          const ref=expCats.filter(c=>c.schedC!=="returns");
+          reg(incCats); reg(ref);
+          bc._groups=[{label:"Income streams",items:incCats},{label:"↩ Refund of an expense",items:ref}];
+        } else {
+          reg(expCats);
+          bc._groups=[{label:"Expense categories",items:expCats}];
+        }
+        // the escape hatches ride along, same as the row pickers
+        const misc=[{id:"__askcpa",label:"Ask My Accountant"}];
+        const nio=[{id:"__transfer",label:"Transfer between my accounts"}];
+        if(!hasInc) nio.push({id:"__draw",label:"Owner draw / pay myself"});
+        [...misc,...nio].forEach(c=>bc._map[c.label]=c.id);
+        bc._groups.push({label:"Not sure?",items:misc},{label:"Not income or expense",items:nio});
+      }
+    }
+  }
 }
 async function bulkAction(action){
   if(!TXN_SEL.size)return;
   if(action==="approve"){
     const bc=$("#bulkcat");
-    bulkApprove(bc && !bc.classList.contains("hidden") && bc.value ? bc.value : null);
+    let catId=null;
+    if(bc && !bc.classList.contains("hidden") && !bc.disabled && bc.value.trim()){
+      catId=(bc._map||{})[bc.value.trim()]||null;
+      if(!catId){ toast("No category by that name. Pick one from the list!"); return; }
+    }
+    if(catId==="__askcpa"){ bulkAskCpa(); return; }
+    if(catId==="__transfer"||catId==="__draw"){ await bulkMark(catId); return; }
+    bulkApprove(catId);
     return;
   }
   if(action==="delete"){
@@ -2088,7 +2212,7 @@ async function doBulk(action){
   if(action==="delete"){ STATE.transactions=STATE.transactions.filter(t=>!TXN_SEL.has(t.id)); }
   else { STATE.transactions.forEach(t=>{if(TXN_SEL.has(t.id))t.splits.forEach(s=>s.tagState=action);}); }
   TXN_SEL.clear(); await saveState(); render();
-  if(prevReview>0 && reviewQueueCount()===0){ confettiBurst(); toastUndo("Inbox zero! Every transaction sorted 🎉"); }
+  if(prevReview>0 && reviewQueueCount()===0){ confettiBurst(); toastUndo("Inbox zero! Every transaction sorted 🎉"); inboxZeroReturn(); }
   else if(action!=="delete" && TXN_FILTER.tag!=="all" && action!==TXN_FILTER.tag) toastUndo("Updated · they moved out of this filter");
   else toastUndo(action==="delete"?"Deleted":"Updated");
 }
@@ -2109,7 +2233,7 @@ async function applyInlinePick(t,v){
   }
   TXN_SEL.delete(t.id); delete INLINE_CAT[t.id];
   await saveState(); render();
-  if(prevReview>0 && reviewQueueCount()===0){ confettiBurst(); toastUndo("Inbox zero! Every transaction sorted 🎉"); }
+  if(prevReview>0 && reviewQueueCount()===0){ confettiBurst(); toastUndo("Inbox zero! Every transaction sorted 🎉"); inboxZeroReturn(); }
   else toastUndo(msg+" · saved");
 }
 /* Ask My Accountant always travels with a note. A bare "ask them" line is
@@ -2173,6 +2297,44 @@ function ccPayModal(t){
 }
 /* ✓ Business approve: applies each row's INLINE category pick + tags Business.
    Selected rows still missing a category get ONE shared pick in a follow-up. */
+/* bulk versions of the row-picker escape hatches. Same rules as single:
+   transfers/draws re-type the whole transaction (excluded from the P&L),
+   Ask My Accountant REQUIRES a note (a bare "ask them" is useless at tax time) */
+async function bulkMark(kind){
+  snapshotTxns();
+  const bt=kind==="__transfer"?"transfer":"draw";
+  let n=0;
+  STATE.transactions.forEach(t0=>{ if(!TXN_SEL.has(t0.id))return;
+    t0.bucketType=bt;
+    t0.splits=[{id:uid(),businessId:"default",amount:t0.amount,category:"",tagState:"always_exclude",projectId:null,clientId:null,note:""}];
+    delete INLINE_CAT[t0.id]; n++;
+  });
+  TXN_SEL.clear(); await saveState(); render();
+  toastUndo(`${n} marked as ${bt==="transfer"?"transfers between your accounts":"owner draws"}`);
+  if(reviewQueueCount()===0) inboxZeroReturn();
+}
+function bulkAskCpa(){
+  const n=TXN_SEL.size;
+  const m=modal(`<h2>What should your accountant know?</h2>
+    <p class="small muted">One note rides along with all ${n} selected transaction${n>1?"s":""} so they can code ${n>1?"them":"it"} without a guessing game. What are they, and what makes you unsure?</p>
+    <label class="fld"><span>Note for your accountant</span><textarea id="bcpa-note" placeholder="e.g. Venmo payments from the same person, not sure if income or reimbursements"></textarea></label>
+    <div class="row" style="margin-top:8px"><button class="btn coral" id="bcpa-save">Park ${n>1?"them":"it"} for my accountant</button></div>`);
+  const ta=$("#bcpa-note",m.o); ta.oninput=()=>ta.classList.remove("attn"); ta.focus();
+  $("#bcpa-save",m.o).onclick=async()=>{
+    const note=ta.value.trim();
+    if(!note){ ta.classList.add("attn"); toast("The note is the whole point! What are these?"); return; }
+    snapshotTxns();
+    let n2=0;
+    STATE.transactions.forEach(t0=>{ if(!TXN_SEL.has(t0.id))return;
+      t0.splits.forEach(sp=>{ sp.tagState="ask_cpa"; sp.category=null; });
+      t0.note = t0.note ? t0.note+" · "+note : note;
+      delete INLINE_CAT[t0.id]; n2++;
+    });
+    TXN_SEL.clear(); m.close(); await saveState(); render();
+    toastUndo(`${n2} parked for your accountant, note attached`);
+    if(reviewQueueCount()===0) inboxZeroReturn();
+  };
+}
 async function bulkApprove(forcedCat){
   const missing=[];
   STATE.transactions.forEach(t=>{ if(!TXN_SEL.has(t.id))return;
@@ -2205,12 +2367,14 @@ async function bulkApprove(forcedCat){
     });
     TXN_SEL.clear(); await saveState(); render();
     const extra=nSpecial?` · ${nSpecial} marked transfer/draw`:"";
-    if(prevReview>0 && reviewQueueCount()===0){ confettiBurst(); toastUndo("Inbox zero! Every transaction sorted 🎉"); }
+    if(prevReview>0 && reviewQueueCount()===0){ confettiBurst(); toastUndo("Inbox zero! Every transaction sorted 🎉"); inboxZeroReturn(); }
     else if(TXN_FILTER.tag!=="all" && TXN_FILTER.tag!=="business") toastUndo(`${n} approved as Business${extra} · moved out of this filter`);
     else toastUndo(`${n} approved as Business${extra}`);
   };
   if(forcedCat||!missing.length){ await apply(forcedCat||null); return; }
-  const opts=activeCats().filter(c=>c.id!=="income").map(c=>`<option value="${c.id}">${esc(c.label)}</option>`).join("");
+  const opts=(()=>{const op=c=>`<option value="${c.id}">${esc(c.label)}</option>`;
+    const inc=activeCats().filter(c=>c.schedC==="income"), exp=activeCats().filter(c=>c.schedC!=="income");
+    return `<optgroup label="Income streams">${inc.map(op).join("")}</optgroup><optgroup label="Expense categories">${exp.map(op).join("")}</optgroup>`;})();
   const m=modal(`<h2>${missing.length} still need${missing.length===1?"s":""} a category</h2>
     <p class="small muted">Every business dollar needs a home. Pick one category for the ${missing.length===1?"one":missing.length} without an inline pick, or close this and set them row by row.</p>
     <label class="fld"><span>Category for the rest</span><select id="bc-cat"><option value="" disabled selected>Choose a category…</option>${opts}</select></label>
@@ -2241,16 +2405,18 @@ function splitChoiceOpts(t,sp){
   const curRet=STATE.categories.find(c=>c.id===cur&&c.retired);
   let o=cur===""?`<option value="" disabled selected>Choose what this is…</option>`:"";
   if(isInc){
-    o+=`<optgroup label="Business income">${incCats.map(co).join("")}</optgroup>`;
-    o+=`<optgroup label="Refund of an expense">${expCats.filter(c=>c.schedC!=="returns").map(co).join("")}</optgroup>`;
+    o+=`<optgroup label="Income streams">${incCats.map(co).join("")}</optgroup>`;
+    o+=`<optgroup label="↩ Refund of an expense">${expCats.filter(c=>c.schedC!=="returns").map(co).join("")}</optgroup>`;
   } else {
-    o+=`<optgroup label="Business expense">${expCats.map(co).join("")}</optgroup>`;
+    o+=`<optgroup label="Expense categories">${expCats.map(co).join("")}</optgroup>`;
   }
   if(curRet) o+=`<option value="${curRet.id}" selected>${esc(curRet.label)} (retired)</option>`;
   o+=`<option value="__newcat">+ New ${isInc?"income stream":"category"}…</option>`;
-  o+=`<optgroup label="Not business">
+  o+=`<optgroup label="Not sure?">
+    <option value="__askcpa" ${cur==="__askcpa"?"selected":""}>Ask My Accountant</option>
+  </optgroup>
+  <optgroup label="Not business">
     <option value="__personal" ${cur==="__personal"?"selected":""}>Personal, not the business's</option>
-    <option value="__askcpa" ${cur==="__askcpa"?"selected":""}>Ask my accountant</option>
     <option value="__review" ${cur==="__review"?"selected":""}>Decide later (Needs Review)</option>
     ${cur==="__exclude"?`<option value="__exclude" selected>Fully Excluded (never counts)</option>`:""}
     ${cur==="__include"?`<option value="__include" selected>Always include</option>`:""}
@@ -2271,24 +2437,28 @@ function txnModal(t){
   // hand-entered transactions start as Business (you know what you're typing);
   // CSV imports keep the per-account default (usually Needs Review)
   t=t?JSON.parse(JSON.stringify(t)):makeTxn({date:todayISO(),amount:0,bucketType:"expense",tagState:"business"});
-  const acctOpts=STATE.accounts.map(a=>`<option value="${a.id}" ${t.accountId===a.id?"selected":""}>${esc(a.nickname)}</option>`).join("");
+  if(isNew) t.bucketType="";   // no sneaky default: the user picks the type
+  const acctOpts=[...STATE.accounts].sort(byNickAZ).map(a=>`<option value="${a.id}" ${t.accountId===a.id?"selected":""}>${esc(a.nickname)}</option>`).join("");
   // options are keyed by category ID (not tax line) so two categories that
   // share a Schedule C line, like Gear and Props, stay distinct
-  const catOpts=(sel)=>`<option value="" ${!sel?"selected":""}>Choose a category…</option>`+STATE.categories.map(c=>`<option value="${c.id}" ${sel===c.id?"selected":""}>${esc(c.label)}</option>`).join("");
+  const catOpts=(sel)=>`<option value="" ${!sel?"selected":""}>Choose a category…</option>`+[...STATE.categories].sort(byLabelAZ).map(c=>`<option value="${c.id}" ${sel===c.id?"selected":""}>${esc(c.label)}</option>`).join("");
   const m=modal(`
     <h2>${isNew?"Add transaction":"Edit transaction"}</h2>
     <div class="row"><label class="fld"><span>Date</span><input type="date" id="t-date" value="${t.date}"></label>
       <label class="fld"><span>Amount</span><div class="cashwrap"><span>$</span><input type="number" step="0.01" id="t-amt" value="${t.amount?Number(t.amount).toFixed(2):""}"></div></label></div>
     <label class="fld"><span>Description</span><input type="text" id="t-desc" value="${esc(t.description)}" placeholder="Who / what"></label>
-    <div class="row">
-      <label class="fld"><span>Type</span><div class="fldrow"><select id="t-bucket">
+    <label class="fld"><span>Type${isNew?` <b style="color:var(--coral-dk)">(pick one)</b>`:""} <button type="button" class="qhelp sm" data-help="txntype" aria-label="What these mean">?</button></span>
+      <select id="t-bucket" class="hidden">
+        <option value="" ${!t.bucketType?"selected":""}></option>
         <option value="expense" ${t.bucketType==="expense"?"selected":""}>Expense (money out)</option>
         <option value="income" ${t.bucketType==="income"?"selected":""}>Income (money in)</option>
         <option value="transfer" ${t.bucketType==="transfer"?"selected":""}>Transfer between my accounts</option>
         <option value="draw" ${t.bucketType==="draw"?"selected":""}>Owner draw / pay myself</option>
-      </select><button type="button" class="qhelp" data-help="txntype" aria-label="What these mean">?</button></div></label>
-      <label class="fld"><span>Account</span><select id="t-acct"><option value="">None</option>${acctOpts}</select></label>
-    </div>
+      </select>
+      <div id="t-typepills" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        ${[["income","Money in (income)"],["expense","Money out (expense)"],["transfer","Transfer between my accounts"],["draw","Owner draw / pay myself"]].map(([v,l])=>`<button type="button" class="pill coral t-typepill ${t.bucketType===v?"on":""}" data-v="${v}" style="width:100%">${l}</button>`).join("")}
+      </div></label>
+    <label class="fld"><span>Account</span><select id="t-acct"><option value="">None</option>${acctOpts}</select></label>
     <div id="t-splitwrap">
       <div class="fld"><span>How should this be coded? <button type="button" class="qhelp sm" data-help="tags" aria-label="What the options mean">?</button></span>
         <div id="t-splits"></div>
@@ -2310,8 +2480,10 @@ function txnModal(t){
     const host=$("#t-splits",wrap); host.innerHTML="";
     const bucket=$("#t-bucket",wrap).value;
     const splitWrap=$("#t-splitwrap",wrap);
-    // transfers/draws have no business split (excluded from book)
-    splitWrap.style.display=(bucket==="transfer"||bucket==="draw")?"none":"block";
+    // transfers/draws have no business split (excluded from book);
+    // no type chosen yet = nothing to code yet either
+    splitWrap.style.display=(bucket==="transfer"||bucket==="draw"||bucket==="")?"none":"block";
+    if(bucket==="")return;
     t.splits.forEach((sp,i)=>{
       // ONE question per part: "What is it?" A category answer = business.
       // Personal / ask / decide-later live in the same list. Multi-splits
@@ -2354,7 +2526,20 @@ function txnModal(t){
   // keep t.bucketType live: the category options ("What is it?") depend on it,
   // so switching Type to Income must swap the list to income streams NOW,
   // not after save (this bug made income un-addable from manual add)
-  $("#t-bucket",wrap).onchange=e=>{t.bucketType=e.target.value;renderSplits();};
+  const setBucket=v=>{
+    if(t.bucketType!==v){
+      t.bucketType=v;
+      // category lists differ per type: a kept pick would silently morph
+      t.splits.forEach(sp=>{ if(sp.category){ sp.category=null; if(sp.tagState==="business"||sp.tagState==="always_include") sp.tagState="business"; } });
+    }
+    renderSplits();
+  };
+  $("#t-bucket",wrap).onchange=e=>setBucket(e.target.value);
+  wrap.querySelectorAll(".t-typepill").forEach(b=>b.onclick=()=>{
+    wrap.querySelectorAll(".t-typepill").forEach(x=>x.classList.toggle("on",x===b));
+    $("#t-bucket",wrap).value=b.dataset.v;
+    setBucket(b.dataset.v);
+  });
   $("#t-amt",wrap).oninput=()=>{if(t.splits.length===1)t.splits[0].amount=parseFloat($("#t-amt",wrap).value)||0;updateAlloc();};
   $("#t-amt",wrap).onblur=e=>{const v=parseFloat(e.target.value);if(!isNaN(v))e.target.value=v.toFixed(2);};
   // glow whatever still needs the user's attention; clears live as they type
@@ -2376,6 +2561,7 @@ function txnModal(t){
   if($("#t-del",wrap))$("#t-del",wrap).onclick=()=>confirmDel("this transaction",async()=>{
     STATE.transactions=STATE.transactions.filter(x=>x.id!==t.id);await saveState();m.close();render();toast("Deleted");});
   $("#t-save",wrap).onclick=async()=>{
+    if(!$("#t-bucket",wrap).value){ toast("Pick a type first: money in, money out, transfer, or draw!"); return; }
     t.date=$("#t-date",wrap).value; t.amount=parseFloat($("#t-amt",wrap).value)||0;
     t.description=$("#t-desc",wrap).value.trim(); t.vendorNorm=normVendor(t.description);
     t.bucketType=$("#t-bucket",wrap).value; t.accountId=$("#t-acct",wrap).value||null;
@@ -2409,7 +2595,7 @@ function txnModal(t){
     if(firstEver) STATE.milestones.firstTxn=true;
     await saveState(); m.close(); render();
     if(firstEver) party("First one in the books! 🎉", `That's the hardest part done${userName()?", "+esc(userName()):""}. ${esc(bizName())} is officially tracking.`);
-    else if(prevReview>0 && reviewQueueCount()===0){ confettiBurst(); toast("Inbox zero! Every transaction sorted 🎉"); }
+    else if(prevReview>0 && reviewQueueCount()===0){ confettiBurst(); toast("Inbox zero! Every transaction sorted 🎉"); inboxZeroReturn(); }
     else if(t.splits.some(sp=>sp.tagState==="review")) toast("Saved · a part is still tagged Needs Review, so it stays in the pile");
     else toast(isNew?"Added":"Saved");
   };
@@ -2424,7 +2610,7 @@ function importModal(preAcctId){
     $("#ie-fix",m.o).onclick=()=>{m.close();accountModal();};
     return;
   }
-  const acctOpts=STATE.accounts.map(a=>`<option value="${a.id}" ${preAcctId===a.id?"selected":""}>${esc(a.nickname)}</option>`).join("")
+  const acctOpts=[...STATE.accounts].sort(byNickAZ).map(a=>`<option value="${a.id}" ${preAcctId===a.id?"selected":""}>${esc(a.nickname)}</option>`).join("")
     +`<option value="__new">+ New account…</option>`;
   const m=modal(`<h2>Import CSV</h2>
     <p class="small muted">Export transactions from your bank or processor as a CSV file, then drop it here. Every bank app has an export button, usually hiding under Statements, Activity, or Download. I'll map the columns and flag duplicates.</p>
@@ -2438,7 +2624,7 @@ function importModal(preAcctId){
     if(e.target.value!=="__new")return;
     e.target.value=preAcctId||STATE.accounts[0].id;   // revert until it's really saved
     accountModal(null,(na)=>{
-      e.target.innerHTML=STATE.accounts.map(a=>`<option value="${a.id}" ${a.id===na.id?"selected":""}>${esc(a.nickname)}</option>`).join("")+`<option value="__new">+ New account…</option>`;
+      e.target.innerHTML=[...STATE.accounts].sort(byNickAZ).map(a=>`<option value="${a.id}" ${a.id===na.id?"selected":""}>${esc(a.nickname)}</option>`).join("")+`<option value="__new">+ New account…</option>`;
       toast("Account added and selected!");
     });
   });
@@ -2634,7 +2820,7 @@ function renderAccountsBody(s,sub){
     add.onclick=()=>accountModal(); s.appendChild(add);
     if(!STATE.accounts.length){s.appendChild(el(`<div class="card center muted">No accounts yet.</div>`));return;}
     const list=el(`<div class="card"></div>`);
-    STATE.accounts.forEach(a=>{
+    [...STATE.accounts].sort(byNickAZ).forEach(a=>{
       const dir=a.kind==="credit card"?`<span style="color:var(--warn)">↑ out only</span>`:(a.landing?`<span style="color:var(--good)">↓ in</span> · ↑ out`:"↑ out");
       const r=el(`<div class="txn"><div class="desc"><b>${esc(a.nickname)}<span class="tiny muted" style="font-weight:500;margin-left:8px">${a.kind} · ${dir}</span></b></div>
         ${a.link?`<a class="btn sm ghost" href="${esc(a.link)}" target="_blank" rel="noopener" style="text-decoration:none;margin-right:6px">Open site ↗</a>`:""}
@@ -2801,7 +2987,7 @@ function screenTaxes(s){
   const tally=(n,amt,warn)=>`<b style="display:grid;grid-template-columns:22px 30px 14px 112px;align-items:center;justify-items:end">
     <span style="color:var(--warn)">${warn?"⚠":""}</span><span>${n||""}</span><span style="opacity:.45">${n?"·":""}</span><span>${n?money(amt):"—"}</span></b>`;
   const dc=el(`<div class="card"><h2>Double-Check Before Filing (${yT})</h2>
-    <p class="small muted">I only look at your own data and ask questions. I never tell you something is deductible. That's your CPA's call. Tap a line to see the detail.</p>
+    <p class="small muted">I only look at your own data and ask questions. I never tell you something is deductible. That's your accountant's call. Tap a line to see the detail.</p>
     <div class="pl-row" data-go="__none" style="display:flex;justify-content:space-between;padding:6px;margin:0 -6px;border-radius:7px;border-bottom:1px solid var(--line);cursor:pointer"><span>Business items with no specific category ${uncategorized?`<button type="button" class="qhelp sm dc-why" data-why="uncat" aria-label="Why this matters">?</button>`:""}</span>${tally(uncategorized,uncatAmt)}</div>
     <div class="pl-row" data-go="personal" style="display:flex;justify-content:space-between;padding:6px;margin:0 -6px;border-radius:7px;border-bottom:1px solid var(--line);cursor:pointer"><span>Expenses you marked personal</span>${tally(personalBiz,persAmt)}</div>
     <div class="pl-row" data-go="askcpa" style="display:flex;justify-content:space-between;padding:6px;margin:0 -6px;border-radius:7px;border-bottom:1px solid var(--line);cursor:pointer"><span>Waiting on Ask My Accountant</span>${tally(askN,yR.askCpa)}</div>
@@ -2810,7 +2996,7 @@ function screenTaxes(s){
     <p class="disc">${CONFIG.disclaimer}</p></div>`);
   const DC_WHY={
     uncat:{t:"No category yet",b:`You've got ${uncategorized} business expense${uncategorized>1?"s":""} with no category. Every one needs a real home so tax time is clean. Not sure where one lands? <b>Tag it Ask My Accountant</b> with a note instead of guessing. That's the intentional version of "not sure".`},
-    miles:{t:"Miles AND car costs",b:`You're logging miles AND deducting ${money0(yR.carExpenses)} of car costs (gas, repairs). Only one method can count at tax time. My estimate uses your actual car costs, and the miles are tracked as info so your CPA can compare and pick the better method before filing.`}
+    miles:{t:"Miles AND car costs",b:`You're logging miles AND deducting ${money0(yR.carExpenses)} of car costs (gas, repairs). Only one method can count at tax time. My estimate uses your actual car costs, and the miles are tracked as info so your accountant can compare and pick the better method before filing.`}
   };
   dc.querySelectorAll(".dc-why").forEach(b=>b.onclick=e=>{
     e.stopPropagation();
@@ -2862,7 +3048,7 @@ function screenTaxes(s){
   q.querySelectorAll(".qhelp").forEach(b=>b.onclick=e=>{e.preventDefault();e.stopPropagation();helpModal(b.dataset.help);});
   q.querySelectorAll(".cpa-q").forEach(inp=>inp.onchange=async()=>{
     const o={}; q.querySelectorAll(".cpa-q").forEach(x=>{const v=parseFloat(x.value); if(!isNaN(v))o["q"+x.dataset.q]=v;});
-    STATE.settings.cpaOverride=Object.keys(o).length?o:null; await saveState(); toast("Saved your CPA numbers!"); render();
+    STATE.settings.cpaOverride=Object.keys(o).length?o:null; await saveState(); toast("Saved your accountant numbers!"); render();
   });
   estRow.appendChild(q);
   s.appendChild(estRow);
@@ -2897,7 +3083,7 @@ function screenTaxes(s){
         byKey[k]=(byKey[k]||0)+Math.abs(sp.amount);
       }}}
   const LINE_NO={advertising:8,car_truck:9,commissions:10,contract_labor:11,depletion:12,depreciation:13,insurance:15,interest:16,legal_professional:17,office_expense:18,rent_lease:20,repairs:21,supplies:22,taxes_licenses:23,travel:24.1,meals:24.2,utilities:25,wages:26,shipping:27.1,software:27.2,bank_fees:27.3,education:27.4,other:27.5,__ask:90,__none:99};
-  const lineLabel=k=> k==="__none" ? "⚠ Needs a category (assign before filing)" : k==="__ask" ? "Ask My Accountant (line: your CPA's call)" : (SCHED_C_LINES[k]||k);
+  const lineLabel=k=> k==="__none" ? "⚠ Needs a category (assign before filing)" : k==="__ask" ? "Ask My Accountant (line: your accountant's call)" : (SCHED_C_LINES[k]||k);
   const cogs=byKey.cogs||0; delete byKey.cogs;
   const expKeyed=Object.entries(byKey).sort((a,b)=>(LINE_NO[a[0]]??98)-(LINE_NO[b[0]]??98));
   const expRows=expKeyed.map(([k,v])=>[lineLabel(k),v]);
@@ -2916,7 +3102,7 @@ function screenTaxes(s){
         + line("Gross profit",money0(grossProfit),{top:true,bold:true}):"")
     + secRow("Expenses (Part II, by line)")
     + (expKeyed.length?expKeyed.map(([k,v])=>{
-        const warn=(k==="car_truck"&&yR.methodConflict)?` <span style="color:var(--warn);cursor:help" title="You also logged ${yR.mileageMiles.toLocaleString()} miles this year (≈ $${Math.round(yR.mileageDeduction)} at the standard rate). Only one method counts per car; ask your CPA whether mileage or these actual costs should win before filing.">⚠</span>`:"";
+        const warn=(k==="car_truck"&&yR.methodConflict)?` <span style="color:var(--warn);cursor:help" title="You also logged ${yR.mileageMiles.toLocaleString()} miles this year (≈ $${Math.round(yR.mileageDeduction)} at the standard rate). Only one method counts per car; ask your accountant whether mileage or these actual costs should win before filing.">⚠</span>`:"";
         const lbl=esc(lineLabel(k)).replace("⚠",`<span style="color:var(--warn)">⚠</span>`);
         return line(lbl+warn,money0(v),{go:k==="__none"?"__none":k==="__ask"?"askcpa":"sched:"+k,italic:k==="__ask",hl:k==="__none"});
       }).join(""):`<div class="sub" style="padding:4px 0">No business expenses yet</div>`)
@@ -2960,7 +3146,7 @@ function screenTaxes(s){
       <button class="btn ghost sm" id="pdf-miles">⬇ PDF</button></div>
     <label class="fld" style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="mi-remind" ${STATE.settings.tracksMiles!==false?"checked":""} style="width:18px;height:18px;flex:0 0 auto"><span style="margin:0" class="small">Remind me to log miles during my Money Date</span></label>
     <div id="milelist" style="margin-top:10px"></div>
-    <div class="warnbox" style="margin-top:10px">At tax time it's one method per car: standard mileage OR actual costs (gas, maintenance), never both. While both exist in your books, my estimate uses your actual car costs and keeps the miles as info for your CPA's comparison. Nothing counts twice.</div>
+    <div class="warnbox" style="margin-top:10px">At tax time it's one method per car: standard mileage OR actual costs (gas, maintenance), never both. While both exist in your books, my estimate uses your actual car costs and keeps the miles as info for your accountant's comparison. Nothing counts twice.</div>
     <p class="disc">${CONFIG.disclaimer}</p></div>`);
   s.appendChild(miCard);
   $("#addmile",s).onclick=()=>mileModal();
@@ -3084,7 +3270,7 @@ function screenReports(s){
 
   // ---- the table: label + THREE fixed columns. Hidden columns render as
   // empty space so nothing shifts left/right when views toggle on/off ----
-  const colDefs=[["book","Net P&L",true],["cash","Cash flow",showCash],["tax","Est. taxable",showTax]];
+  const colDefs=[["book","Net P&L",true],["cash","Cash in vs out",showCash],["tax","Est. taxable",showTax]];
   const grid=`grid-template-columns:minmax(0,1fr) repeat(3,112px)`;
   const cell=(v,on)=>`<span style="justify-self:end">${!on?"":(v==null?`<span class="muted">—</span>`:money0(v))}</span>`;
   const row=(label,vals,o)=>`<div class="${o&&o.go?"pl-row":""}" ${o&&o.go?`data-go="${o.go}"`:""} style="display:grid;${grid};gap:10px;align-items:center;padding:4px 6px;margin:0 -6px;border-radius:7px;font-size:.9rem;${o&&o.go?"cursor:pointer;":""}${o&&o.top?"border-top:1px solid var(--line);margin-top:3px;padding-top:7px;":""}${o&&o.italic?"font-style:italic;":""}${o&&o.hl?"background:color-mix(in srgb, var(--warn) 16%, transparent);":""}${o&&o.bold?"font-weight:700;":""}">
@@ -3131,7 +3317,7 @@ function screenReports(s){
     html+=row("Bottom line",{book:R.book,cash:showCash?R.cashFlow:null,tax:showTax?R.estTaxableProfit:null},{top:true,bold:true});
   const plCard=el(`<div class="card"><h2 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Profit &amp; Loss (${esc(P.label)})
       <span style="display:flex;gap:6px;margin-left:auto">
-        <button class="pill coral ${showCash?"on":""}" id="pl-cash" style="font-size:.72rem">+ Cash flow</button>
+        <button class="pill coral ${showCash?"on":""}" id="pl-cash" style="font-size:.72rem">+ Cash in vs out</button>
         <button class="pill coral ${showTax?"on":""}" id="pl-tax" style="font-size:.72rem">+ Est. taxable</button>
       </span></h2>
     <p class="small muted">Cash-based, your categories, every line tappable. Add the other two views and the "why they differ" lines show exactly where the numbers part ways.</p>
@@ -3248,7 +3434,7 @@ function plDrill(title,go,per){
 function printCard(node,title){
   let pr=document.getElementById("printroot");
   if(!pr){ pr=document.createElement("div"); pr.id="printroot"; document.body.appendChild(pr); }
-  pr.innerHTML=`<div class="p-head"><div style="font-family:var(--font-head);font-weight:600;font-size:1.15rem">${esc(bizName())}</div><div class="tiny">${esc(title)} · generated ${new Date().toLocaleDateString()}</div></div>`+node.outerHTML
+  pr.innerHTML=`<div class="p-head"><div style="font-family:var(--font-head);font-weight:600;font-size:1.15rem">${esc(bizName())}</div><div class="tiny">${esc(title)} · generated ${fmtStamp(Date.now())}</div></div>`+node.outerHTML
     +`<div class="tiny" style="margin-top:16px;text-align:center;color:#999">${esc(appCredit())}</div>`;
   document.body.classList.add("printing");
   const done=()=>{document.body.classList.remove("printing");pr.innerHTML="";window.removeEventListener("afterprint",done);};
@@ -3280,7 +3466,7 @@ function exportScheduleC(pl,y,yr){
   rows.push(["Est. taxable profit",y.estTaxableProfit.toFixed(2)]);
   if(y.mileageMiles>0)rows.push(["Mileage tracked (info)",`${y.mileageMiles} mi = ${y.mileageDeduction.toFixed(2)} at standard rate`]);
   if(y.methodConflict)rows.push(["","MILEAGE VS ACTUALS: estimate uses actual car costs; miles above are for the CPA's method comparison"]);
-  rows.push(["","Estimate only. Not tax advice. Confirm with your CPA."]);
+  rows.push(["","Estimate only. Not tax advice. Confirm with your accountant."]);
   rows.push(["",appCredit()]);
   downloadFile(`FFT-ScheduleC-${yr||curYear()}.csv`, rows.map(r=>r.map(csvCell).join(",")).join("\n"),"text/csv");
   toast("Schedule C exported!");
@@ -3412,7 +3598,7 @@ function screenMoneyDate(s){
   const yr=curYear(), cfg=cfgFor(yr);
   const ytd=report({year:yr},"default");
   const setAside=(cpaTotal()!=null)?cpaTotal():setAsideAmount();
-  const acctRows=STATE.accounts.map(a=>{const st=staleInfo(a);return `
+  const acctRows=[...STATE.accounts].sort(byNickAZ).map(a=>{const st=staleInfo(a);return `
     <div class="btn ghost sm md-acct" data-id="${a.id}" role="button" tabindex="0" style="display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:0;cursor:pointer;text-align:left;margin-bottom:6px">
       <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700">${esc(a.nickname)}</span>
       <span style="flex:0 0 auto;display:flex;align-items:center;gap:8px">
@@ -3428,16 +3614,18 @@ function screenMoneyDate(s){
   // a per-account "skip this round" counts as handled
   const since=STATE.lastMoneyDate||0;
   const freshDetected = STATE.accounts.length>0 && STATE.accounts.every(a=>(p.acctSkip||[]).includes(a.id)||STATE.transactions.some(t=>t.accountId===a.id && (t.createdAt||0)>since));
+  const firstEverMD=!STATE.lastMoneyDate;
+  const coachOn = STATE.settings.mdCoachAlways===true || (firstEverMD && STATE.settings.mdCoachAlways!==false);
   const stepDefs=[
     {id:"fresh",title:"Add what's new",check:"Everything new is in",detect:freshDetected,detectNote:"checked itself: every account has new activity",
       body:`<p class="small" style="margin:0 0 8px">Tap each account and add or import anything since last time. The stamps show who's behind.</p>${acctGrid}<button class="btn ghost sm" id="mdw-import" style="margin-top:6px">⇪ Import a CSV</button>`},
-    ...(STATE.settings.cashIncome?[{id:"cash",title:"Cash in hand?",check:"Added, or no cash this time",
-      body:`<p class="small" style="margin:0 0 8px">Any cash payments since last time? Cash counts like any deposit!</p><button class="btn ghost sm" id="mdw-cash">+ Add a cash payment</button>`}]:[]),
+    ...(STATE.settings.cashIncome?[{id:"cash",title:"Cash in hand?",check:"It's all in: I added what I had, or there was no cash this round",
+      body:`${coachOn?"":`<p class="small" style="margin:0 0 8px">Any cash payments since last time? Cash counts like any deposit!</p>`}<button class="btn ghost sm" id="mdw-cash">+ Add a cash payment</button>`}]:[]),
     {id:"review",title:"Sort the review pile",auto:true,done:rc===0&&(p.done.includes("fresh")||freshDetected),
       body: rc? `<p class="small" style="margin:0 0 8px"><b>${rc}</b> transaction${rc>1?"s":""} waiting for a yes or no. Your profit number isn't final until they're sorted.</p><button class="btn coral sm" id="mdw-review">Sort ${rc} now →</button>`
               : (p.done.includes("fresh")||freshDetected)? `<p class="small" style="margin:0">Nothing waiting. This one checked itself!</p>`
               : `<p class="small" style="margin:0">The pile is empty, but step 1 isn't done yet. Once the new stuff is in, this gets its real count.</p>`},
-    ...(STATE.settings.tracksMiles!==false?[{id:"miles",title:"Log your miles",check:"Logged, or no trips this time",
+    ...(STATE.settings.tracksMiles!==false?[{id:"miles",title:"Log your miles",check:"It's all in: I logged what I drove, or there were no trips this round",
       body:`<p class="small" style="margin:0 0 8px">Business trips since last time? Each mile is worth ${Math.round(cfg.mileageRatePerMile*100)}¢ on the tax view.</p><button class="btn ghost sm" id="mdw-miles">+ Log trips</button>`}]:[]),
     (()=>{ const bkAddressed=p.done.includes("backup");
       const occB=(md&&md.freq)?mdPrev(md,new Date()):null;
@@ -3466,12 +3654,11 @@ function screenMoneyDate(s){
   ];
   const isDone=sd=> sd.auto? sd.done : (p.done.includes(sd.id)||!!sd.detect);
   const doneCount=stepDefs.filter(isDone).length;
-  const firstEverMD=!STATE.lastMoneyDate;
   const wt=el(`<div class="card"><h2>${firstEverMD?`${userName()?esc(userName())+"'s":"Your"} FIRST Money Date 💛`:`${userName()?esc(userName())+"'s":"Your"} Money Date 💛`}</h2>
     <p class="small muted">${firstEverMD
       ?"This one loop is the whole app: bring money in, sort it, peek at your numbers, back it up. Do it once and you've got it! Pour something nice and go top to bottom."
-      :`Ten minutes${md.freq?", "+mdLabel(md):""}. Pour something nice, then just go top to bottom!`}</p>
-    <p class="tiny muted" style="margin-top:-4px">${md.freq?`Next one: <b>${nxt?isoLocal(nxt):""}</b>`:`No rhythm set yet`} · <a href="#" id="md-gosettings">change the schedule in Settings</a></p>
+      :`About ${mdEstimate()} minutes this round${md.freq?", "+mdLabel(md):""}. Pour something nice, then just go top to bottom!`}</p>
+    <p class="tiny muted" style="margin-top:-4px">${md.freq?`Next one: <b>${nxt?fmtDue(isoLocal(nxt)):""}</b>`:`No rhythm set yet`} · <a href="#" id="md-gosettings">change the schedule in Settings</a></p>
     <div class="progress" style="margin:10px 0 14px"><i style="width:${Math.round(doneCount/stepDefs.length*100)}%"></i></div>
     <div id="mdw-steps"></div></div>`);
   const stepsHost=$("#mdw-steps",wt);
@@ -3479,10 +3666,9 @@ function screenMoneyDate(s){
   // and later steps dim until it's their turn. COACH MODE (first date ever, or
   // the "coach me every time" setting) goes further: one step at a time with
   // extra plain-English directions; everything else collapses out of the way.
-  const coachOn = STATE.settings.mdCoachAlways===true || (firstEverMD && STATE.settings.mdCoachAlways!==false);
   const COACH_TXT={
     fresh:"Why this is first: every number in this app is built from this list. Tap an account, pull in anything new (import its CSV or add by hand), and its stamp flips to added. Green stamps all around = tick the box!",
-    cash:"Cash counts even without a bank record! Anyone pay you in cash since last time? Add it now. Nothing? Tick the box and cruise on.",
+    cash:"This one's only for money that never touched a bank: someone hands you cash at a market, a cash tip, a client who pays in twenties. If it went straight into your pocket, add it here so your income stays honest! Deposits and card payments already arrived with your imports, so don't re-add those.",
     review:"The sorting moment! Every new transaction waits in one pile until you call it: business, personal, or ask my accountant. Your profit number is literally made of these answers, so this is the most important two minutes of the whole date.",
     miles:"Business miles are money. Client visits, supply runs, post office trips. Log them while you still remember where you went!",
     backup:"Your books live ONLY on this device, so the backup file is the entire safety net. One tap makes the file, you pick where it lands. Future you says thank you!",
@@ -3490,27 +3676,38 @@ function screenMoneyDate(s){
   };
   const firstPending=stepDefs.findIndex(sd=>!isDone(sd));
   if(coachOn && firstPending>=0) MD_SESSION=true;
+  if(!p.startedAt && firstPending>=0){ p.startedAt=Date.now(); saveState(); }
   stepDefs.forEach((sd,i)=>{
     const done=isDone(sd);
     const isCur=i===firstPending;
     const isFuture=!done && firstPending>=0 && i>firstPending;
-    if(coachOn && !isCur){
-      // collapsed row: number/check + title only, current step keeps the focus
-      stepsHost.appendChild(el(`<div style="display:flex;gap:11px;align-items:center;padding:9px 0;${i<stepDefs.length-1?"border-bottom:1px solid var(--line);":""}${isFuture?"opacity:.45;":""}">
+    const reopened=done && MD_OPEN.has(sd.id);
+    if(coachOn && !isCur && !reopened){
+      // collapsed row: number/check + title only, current step keeps the
+      // focus. DONE rows reopen on tap (thought of more to add? go back in!)
+      const crow=el(`<div style="display:flex;gap:11px;align-items:center;padding:9px 0;${i<stepDefs.length-1?"border-bottom:1px solid var(--line);":""}${isFuture?"opacity:.45;":""}${done?"cursor:pointer;":""}" ${done?`title="Tap to reopen this step"`:""}>
         <div style="flex:0 0 26px;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;font-family:var(--font-head);${done?"background:var(--good);color:#fff":"background:var(--cream-2);color:var(--muted)"}">${done?"✓":i+1}</div>
-        <b style="font-family:var(--font-head);${done?"color:var(--muted)":""}">${sd.title}</b>${done?"":`<span class="tiny muted" style="margin-left:auto;flex:0 0 auto">up next</span>`}
-      </div>`));
+        <b style="font-family:var(--font-head);${done?"color:var(--muted)":""}">${sd.title}</b>
+        <span class="tiny muted" style="margin-left:auto;flex:0 0 auto">${done?"⌄ reopen":"up next"}</span>
+      </div>`);
+      if(done) crow.onclick=()=>{ MD_OPEN.add(sd.id); render(); };
+      stepsHost.appendChild(crow);
       return;
     }
     stepsHost.appendChild(el(`<div ${isCur?`id="md-cur"`:""} style="display:flex;gap:11px;padding:11px 0;${isCur?"background:color-mix(in srgb, var(--coral) 12%, var(--white));border:2px solid var(--coral);border-radius:14px;padding:12px;margin:8px -12px;":i<stepDefs.length-1?"border-bottom:1px solid var(--line);":""}${isFuture?"opacity:.45;":""}">
       <div style="flex:0 0 26px;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.8rem;font-family:var(--font-head);${done?"background:var(--good);color:#fff":isCur?"background:var(--coral);color:var(--coral-text)":"background:var(--cream-2);color:var(--muted)"}">${done?"✓":i+1}</div>
       <div style="flex:1;min-width:0">
-        <b style="font-family:var(--font-head)${done?";color:var(--muted)":""}">${sd.title}</b>${isCur?`<span style="display:inline-block;background:var(--coral);color:var(--coral-text);border-radius:99px;padding:2px 10px;margin-left:8px;font-size:.66rem;font-weight:700;font-family:var(--font-head);letter-spacing:.04em;vertical-align:middle">👉 DO THIS NOW</span>`:""}
+        <b style="font-family:var(--font-head)${done?";color:var(--muted)":""}">${sd.title}</b>${isCur?`<span style="display:inline-block;background:var(--coral);color:var(--coral-text);border-radius:99px;padding:2px 10px;margin-left:8px;font-size:.66rem;font-weight:700;font-family:var(--font-head);letter-spacing:.04em;vertical-align:middle">👉 DO THIS NOW</span>`:""}${coachOn&&!isCur&&done?`<button type="button" class="md-tuck tiny" data-id="${sd.id}" style="background:none;color:var(--muted);text-decoration:underline;padding:0;float:right;cursor:pointer">⌃ tuck away</button>`:""}
         ${coachOn&&isCur&&COACH_TXT[sd.id]?`<p class="small" style="margin:6px 0 2px">${COACH_TXT[sd.id]}</p>`:""}
         <div style="margin-top:4px">${sd.body}</div>
-        ${sd.auto?"":(sd.detect&&!p.done.includes(sd.id)?`<div class="tiny" style="margin-top:8px;color:var(--good)">✓ ${sd.detectNote}</div>`:`<label class="tiny" style="display:flex;gap:7px;align-items:center;margin-top:8px;color:var(--muted);cursor:pointer"><input type="checkbox" class="mdw-ck" data-id="${sd.id}" ${done?"checked":""} style="width:16px;height:16px;flex:0 0 auto">${sd.check}</label>`)}
+        ${sd.auto?"":(sd.detect&&!p.done.includes(sd.id)
+          ?`<div class="tiny" style="margin-top:8px;color:var(--good)">✓ ${sd.detectNote}</div>`
+          :(done
+            ?`<button type="button" class="mdw-undo tiny" data-id="${sd.id}" style="background:none;color:var(--muted);text-decoration:underline;padding:0;margin-top:8px">↩ Actually, not done yet (unmark)</button>`
+            :`<button type="button" class="btn sm mdw-done" data-id="${sd.id}" style="margin-top:10px;border:1.5px solid var(--good);color:var(--good);background:var(--white)">✓ ${sd.check}</button>`))}
       </div></div>`));
   });
+  wt.querySelectorAll(".md-tuck").forEach(b=>b.onclick=()=>{ MD_OPEN.delete(b.dataset.id); render(); });
   if(coachOn && firstPending>=0) wt.appendChild(el(`<p class="tiny" style="margin:12px 0 0;text-align:center"><a href="#" id="md-pause" style="color:var(--muted)">Need to stop? Pause my Money Date (everything is saved)</a> · <a href="#" id="md-coachoff" style="color:var(--muted)">Turn off Coach Mode</a></p>`));
   s.appendChild(wt);
   if($("#md-pause",wt))$("#md-pause",wt).onclick=e=>{e.preventDefault();MD_SESSION=false;CURRENT="dash";render();toast("Paused! Everything is saved. Come back any time 💛");};
@@ -3543,14 +3740,20 @@ function screenMoneyDate(s){
     p.acctSkip=p.acctSkip.includes(id)?p.acctSkip.filter(x=>x!==id):[...p.acctSkip,id];
     await saveState(); render();
   });
-  wt.querySelectorAll(".mdw-ck").forEach(ck=>ck.onchange=()=>mdToggle(ck.dataset.id,ck.checked));
+  wt.querySelectorAll(".mdw-done").forEach(b=>b.onclick=()=>mdToggle(b.dataset.id,true));
+  wt.querySelectorAll(".mdw-undo").forEach(b=>b.onclick=()=>mdToggle(b.dataset.id,false));
   if($("#mdw-import",wt))$("#mdw-import",wt).onclick=()=>importModal();
   if($("#mdw-cash",wt))$("#mdw-cash",wt).onclick=()=>txnModal();
   if($("#mdw-review",wt))$("#mdw-review",wt).onclick=()=>{TXN_FILTER.tag="review";CURRENT="txns";render();};
   if($("#mdw-miles",wt))$("#mdw-miles",wt).onclick=()=>mileModal({fromMD:true});
   async function finishMD(withBackup){
     const wasFirst=!STATE.lastMoneyDate;
-    MD_SESSION=false;
+    const startedAt=STATE.mdProgress&&STATE.mdProgress.startedAt;
+    if(startedAt){
+      const mins=(Date.now()-startedAt)/60000;
+      if(mins>=1&&mins<=90){ if(!STATE.mdHistory)STATE.mdHistory=[]; STATE.mdHistory.push(Math.round(mins)); STATE.mdHistory=STATE.mdHistory.slice(-8); }
+    }
+    MD_SESSION=false; MD_OPEN.clear();
     STATE.lastMoneyDate=Date.now();
     STATE.mdProgress=null;   // fresh checklist next cycle
     await saveState();
@@ -3694,7 +3897,7 @@ function screenSettings(s){
         ${Array.from({length:28},(_,i)=>`<option value="${i+1}" ${String(mdS.dom)===String(i+1)?"selected":""}>${i+1}</option>`).join("")}
         <option value="last" ${mdS.dom==="last"?"selected":""}>Last day</option></select></label>
     </div>
-    <p class="tiny muted" style="margin:0">${mdS.freq?`We meet ${mdLabel(mdS)}. Next one: <b>${mdNxt?isoLocal(mdNxt):""}</b>${STATE.lastMoneyDate?` · last done ${new Date(STATE.lastMoneyDate).toLocaleDateString()}`:""}`:"Pick a rhythm and I'll remind you on your to-do list and calendar!"}</p>
+    <p class="tiny muted" style="margin:0">${mdS.freq?`We meet ${mdLabel(mdS)}. Next one: <b>${mdNxt?fmtDue(isoLocal(mdNxt)):""}</b>${STATE.lastMoneyDate?` · last done ${fmtStamp(STATE.lastMoneyDate)}`:""}`:"Pick a rhythm and I'll remind you on your to-do list and calendar!"}</p>
     <label class="small" style="display:flex;gap:8px;align-items:center;margin-top:12px;cursor:pointer">
       <input type="checkbox" id="md-coach" ${st.mdCoachAlways?"checked":""} style="width:17px;height:17px;flex:0 0 auto">
       Coach me through every Money Date (one step at a time, with extra directions)
@@ -3752,7 +3955,7 @@ function screenSettings(s){
 
   s.appendChild(el(`<div class="card" style="border-color:var(--bad)"><h2 style="color:var(--bad)">Danger zone</h2>
     <div class="warnbox">Start over wipes EVERYTHING on this device: every transaction, account, and setting. There is no undo. Download a backup first if there's any chance you'll want this data again.</div>
-    <button class="btn block" id="se-reset" style="margin-top:10px;background:var(--bad);color:#fff">⚠ Start over (erase everything)</button></div>`));
+    <button class="btn block" id="se-reset" style="margin-top:10px;background:var(--bad);color:#fff">⚠ Start over (erase everything on this device)</button></div>`));
   $("#se-reset",s).onclick=()=>resetPrompt();
 
   s.appendChild(el(`<div class="card"><h2>Hear about upgrades first 💌</h2>
@@ -3794,7 +3997,7 @@ function mergeCategories(pack){
    ONBOARDING WIZARD
    ===================================================================== */
 let OB={step:0, resume:false, data:{accounts:[],done:[]}};
-const OB_STEPS=["welcome","basics","inccats","categories","land","spend","rule","paid","cadence","setaside","pin"];
+const OB_STEPS=["intro","welcome","basics","inccats","categories","land","spend","rule","paid","cadence","setaside","pin"];
 const obSteps=()=> OB.resume ? OB_STEPS.slice(0,-1) : OB_STEPS;   // resume skips the PIN step (vault already exists)
 const LAND_TYPES=["Checking","Savings","Cash","PayPal","Venmo","Cash App","Stripe","Square","Etsy","Other"];
 const SPEND_TYPES=["Credit card","Checking","Savings","Cash","PayPal","Venmo","Other"];
@@ -4067,14 +4270,14 @@ const OB_HELP={
     <p class="small">Whether YOU need to depends on how much you make and your whole tax picture. That's a perfect first question for a CPA. Never done it and not sure? Leave this on so you can see the due dates, and ask.</p>
     <p class="disc">Education only, not tax advice.</p>`},
   profit:{t:"The three numbers, in plain English",b:`<p class="small"><b>Net profit</b>: income minus business expenses. The answer to "am I actually making money?" This is the big number, and it's real profit, not just cash moving around.</p>
-    <p class="small"><b>Cash flow</b>: every dollar in vs out, including paying yourself. It answers "why does my account feel empty?" You can be profitable AND cash-poor at the same time; that's normal, not a math error.</p>
+    <p class="small"><b>Cash in vs out</b> (your cash flow): every dollar in minus every dollar out, business and personal together, including paying yourself. It answers "why does my account feel empty?" You can be profitable AND cash-poor at the same time; that's normal, not a math error.</p>
     <p class="small"><b>Est. taxable profit</b>: net profit adjusted for tax-only deductions like mileage. My set-aside estimate is based on this one.</p>
     <p class="small">One catch: while anything sits in <b>Needs Review</b>, net profit isn't final. Sort the queue and the number firms up.</p>
     <p class="small"><b>Refunds</b>: money coming IN that you code to an expense category (like a materials return) reduces that expense instead of counting as income. Your income number stays honest.</p>`},
   setaside:{t:"Where the 30% comes from",b:`<p class="small">Self-employment tax runs about 15.3%, and a rough ballpark for federal income tax on top gets many freelancers near 30%. It's a common starting point, not your personal number.</p>
     <p class="small"><b>State buffer</b>: if your state has income tax, add a few extra percent here.</p>
     <p class="small"><b>Your CPA beats me</b>: if your accountant gave you real quarterly amounts, enter those on this tab and they override my estimate everywhere.</p>
-    <p class="disc">Estimate only. Not tax advice. Confirm with your CPA.</p>`}
+    <p class="disc">Estimate only. Not tax advice. Confirm with your accountant.</p>`}
 };
 function helpModal(key){
   const h=OB_HELP[key]; if(!h)return;
@@ -4103,14 +4306,20 @@ function renderOB(){
     <div class="progress"><i style="width:${pct}%"></i></div>${inner}
     ${skippable?`<button class="btn ghost block sm" id="ob-skiprest" style="margin-top:16px;color:var(--muted)">Exit setup for now</button>`:""}</div></div>`;
   let inner="";
-  if(step==="welcome"){
+  if(step==="intro"){
+    inner=`<h1>Before we start, a quick promise 💛</h1>
+      <div class="helper"><span class="lead">This setup is the foundation of your books.</span>
+        It takes about five minutes, and every page builds a piece the app can't run without: your accounts, your income streams, your expense categories, your tax set-aside. Finish it in one sitting and everything after gets easier!</div>
+      <div class="card" style="border:2px solid var(--coral);background:color-mix(in srgb, var(--coral) 8%, var(--white));padding:14px 16px">
+        <b style="font-family:var(--font-head)">And then? Meet your Coach.</b>
+        <p class="small" style="margin:6px 0 0">The moment setup is done, I switch into Coach mode and walk you through your first Money Date: one glowing step at a time, directions the whole way. That ten-minute loop is the whole app, and it's where your numbers finally make sense!</p>
+      </div>
+      <p class="tiny muted" style="margin:10px 2px 0">Need to bail partway? Everything saves automatically and a Home to-do brings you right back. But your Coach and your first Money Date wait until setup is done.</p>
+      <button class="btn coral block" id="ob-next" style="margin-top:12px">Let's build your books</button>`;
+  } else if(step==="welcome"){
     inner=`<h1>Hi, I'm your finance sidekick 💛</h1>
       <div class="helper"><span class="lead">First things first, who am I working with?</span>
         Tell me your name and what you call your business. I'll use them to keep things personal (and honestly, a little less boring) the whole way through.</div>
-      <div class="card" style="border:2px solid var(--coral);background:color-mix(in srgb, var(--coral) 8%, var(--white));padding:12px 14px;margin-bottom:12px">
-        <b style="font-family:var(--font-head)">Worth finishing in one sitting (about 5 minutes)</b>
-        <p class="small" style="margin:4px 0 0">Every step builds a piece your books can't run without: accounts, categories, your tax set-aside. The moment you finish, your <b>Coach</b> takes over and walks you through your first Money Date, one step at a time. That's where it all clicks!</p>
-      </div>
       <div class="card">
         <label class="fld"><span>Your first name</span><input type="text" id="ob-uname" value="${esc(OB.data.userName||"")}" placeholder="What should I call you?"></label>
         <label class="fld"><span>Business name</span><input type="text" id="ob-bname" value="${esc(OB.data.bizName||"")}" placeholder="What do you call it?"></label>
@@ -4205,12 +4414,12 @@ function renderOB(){
   } else if(step==="setaside"){
     inner=`<h1>Tax set-aside</h1>
       <div class="helper"><span class="lead">Just an estimate, not tax advice.</span>
-        This is a simple tool to help you estimate how much to set aside for potential taxes. It's a rough guess, not a rule, and definitely not advice (the lawyers make me say that 😉). A common starting point is <b>${CONFIG.setAsideDefaultPct}%</b>. Change it to whatever fits you, add a state buffer if you'd like, and let your CPA give you the real number.</div>
+        This is a simple tool to help you estimate how much to set aside for potential taxes. It's a rough guess, not a rule, and definitely not advice (the lawyers make me say that 😉). A common starting point is <b>${CONFIG.setAsideDefaultPct}%</b>. Change it to whatever fits you, add a state buffer if you'd like, and let your accountant give you the real number.</div>
       <div class="card">
       <div class="row"><label class="fld"><span>Set-aside %</span><div class="fldrow"><input type="number" id="ob-pct" value="${OB.data.setAsidePct||CONFIG.setAsideDefaultPct}"><button type="button" class="qhelp" data-help="setaside" aria-label="Where the number comes from">?</button></div></label>
       <label class="fld"><span>State buffer %</span><input type="number" id="ob-state" value="${OB.data.stateBufferPct||0}"></label></div>
-      <p class="tiny muted">State buffer: no state income tax where you live? Leave it at 0. Otherwise your state's rate is a great first question for your CPA, and 0 is fine to start.</p>
-      <label class="fld" style="display:flex;gap:8px;align-items:flex-start;margin-top:6px"><input type="checkbox" id="ob-quarterly" ${OB.data.quarterly!==false?"checked":""} style="width:18px;height:18px;flex:0 0 auto;margin-top:2px"><span style="margin:0">I make (or plan to make) quarterly estimated tax payments <button type="button" class="qhelp sm" data-help="quarterlyq" aria-label="What are these?">?</button><span class="tiny muted" style="display:block;font-weight:500">Keeps the quarterly due dates and CPA-amount tracking visible. Not sure? Leave it on and ask your CPA. You can flip it anytime on the Taxes tab.</span></span></label>
+      <p class="tiny muted">State buffer: no state income tax where you live? Leave it at 0. Otherwise your state's rate is a great first question for your accountant, and 0 is fine to start.</p>
+      <label class="fld" style="display:flex;gap:8px;align-items:flex-start;margin-top:6px"><input type="checkbox" id="ob-quarterly" ${OB.data.quarterly!==false?"checked":""} style="width:18px;height:18px;flex:0 0 auto;margin-top:2px"><span style="margin:0">I make (or plan to make) quarterly estimated tax payments <button type="button" class="qhelp sm" data-help="quarterlyq" aria-label="What are these?">?</button><span class="tiny muted" style="display:block;font-weight:500">Keeps the quarterly due dates and CPA-amount tracking visible. Not sure? Leave it on and ask your accountant. You can flip it anytime on the Taxes tab.</span></span></label>
       <label class="fld" style="margin-top:6px"><span>Do you drive for business (client visits, supply runs, deliveries)?</span><select id="ob-miles">
         <option value="" disabled ${OB.data.md_tracks==null?"selected":""}>Choose one…</option>
         <option value="yes" ${OB.data.md_tracks==="yes"?"selected":""}>Yes, remind me to log miles</option>
@@ -4231,7 +4440,7 @@ function renderOB(){
       <button class="btn ghost block" id="ob-skippin" style="margin-top:10px">Skip the PIN for now</button>
       <p class="tiny muted" style="margin-top:6px">No PIN means your data stays on this device but isn't locked or encrypted. You can add one anytime in Settings.</p>`;
   }
-  host.innerHTML=shell(inner, {welcome:"Hello",basics:"The basics",inccats:"Income",categories:"Expenses",land:"Money in",spend:"Money out",rule:"The rule",paid:"Getting paid",cadence:"Money Date",setaside:"Taxes",pin:"Security"}[step]);
+  host.innerHTML=shell(inner, {intro:"Welcome",welcome:"Hello",basics:"The basics",inccats:"Income",categories:"Expenses",land:"Money in",spend:"Money out",rule:"The rule",paid:"Getting paid",cadence:"Money Date",setaside:"Taxes",pin:"Security"}[step]);
   wireOB(step);
   // every page turn starts at the TOP of the new page (phone scroll fix)
   window.scrollTo(0,0);
@@ -4311,6 +4520,7 @@ function wireOB(step){
       }
     });
   }
+  if(step==="intro"&&next)next.onclick=()=>{ OB.step++; renderOB(); };
   if(step==="welcome"&&next)next.onclick=()=>{
     captureStep("welcome");
     if(!OB.data.userName){toast("What should I call you?");return;}
@@ -4775,7 +4985,7 @@ function legalModal(kind){
     +p(`The app stores everything on your own device and I never receive a copy. That means: (a) you own your data completely, (b) you are responsible for backing it up using the built-in backup button, and (c) if your device or browser data is lost, cleared, or broken without a backup, your data cannot be recovered by anyone, including me. The app reminds you about backups regularly. Please listen to it.`)
     +p(`If you set a PIN, a lost PIN cannot be reset or recovered. Your backup file is your only recovery path.`)
     +h("3. Not tax, legal, or financial advice")
-    +p(`${N} is a tracking and estimating tool. Every tax-related number it shows (set-aside estimates, estimated taxable profit, Schedule C summaries, mileage values) is an estimate for planning purposes only, built from data you entered. It is not tax advice, legal advice, or financial advice, and it is not a substitute for a qualified professional. Confirm anything that matters with your CPA or tax professional before relying on it. Tax values (like mileage rates and thresholds) are updated on a best-effort basis and may lag official changes.`)
+    +p(`${N} is a tracking and estimating tool. Every tax-related number it shows (set-aside estimates, estimated taxable profit, Schedule C summaries, mileage values) is an estimate for planning purposes only, built from data you entered. It is not tax advice, legal advice, or financial advice, and it is not a substitute for a qualified professional. Confirm anything that matters with your accountant or tax professional before relying on it. Tax values (like mileage rates and thresholds) are updated on a best-effort basis and may lag official changes.`)
     +h("4. One device, no sync")
     +p(`The app works on the device you set it up on. Data does not sync between devices in this version. You can move your data manually with a backup file.`)
     +h("5. The app may improve")
