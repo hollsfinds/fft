@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build 2026-07-04n -->
+<!-- build 2026-07-04o -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#FCFCFA">
@@ -335,6 +335,8 @@ html{touch-action:manipulation}
 .txn input[type=checkbox]{width:18px;height:18px;flex:0 0 auto}
 .pl-solo{display:none}   /* phone-only: the P&L column selector's third pill */
 .dash-qa{display:none}   /* phone-only: Home quick actions */
+.dq-mint{border:1.5px solid color-mix(in srgb, var(--teal) 32%, var(--white));background:color-mix(in srgb, var(--teal) 16%, var(--white));color:var(--ink)}
+.dq-mint:hover{background:color-mix(in srgb, var(--teal) 26%, var(--white))}
 .ksub{display:inline}    /* phone: drops to its own line under the tile name */
 .kphone{display:none}    /* est-tax tile: trailing year is phone-only */
 @media(max-width:760px){ .ksub{display:block} .kphone{display:block} .kpre{display:none} }
@@ -1716,8 +1718,8 @@ function screenDash(s){
   // PHONE ONLY: the sidebar is a drawer there, so the two most-used actions
   // get front-door buttons (desktop keeps them in the always-visible sidebar)
   const qa=el(`<div class="dash-qa" style="gap:8px;margin:0 0 14px">
-    <button class="btn coral sm" id="dq-add" style="flex:1;min-width:0">+ Manual Add (Inc/Exp)</button>
-    <button class="btn ghost sm" id="dq-miles" style="flex:1;min-width:0">🚗 Log mileage</button></div>`);
+    <button class="btn sm dq-mint" id="dq-add" style="flex:1;min-width:0">+ Manual Add (Inc/Exp)</button>
+    <button class="btn sm dq-mint" id="dq-miles" style="flex:1;min-width:0">🚗 Log mileage</button></div>`);
   $("#dq-add",qa).onclick=()=>txnModal();
   $("#dq-miles",qa).onclick=()=>mileModal();
   s.appendChild(qa);
