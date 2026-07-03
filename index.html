@@ -304,7 +304,8 @@ main .wrap{max-width:980px}
 .stick-tabs.sub .ttab:hover{background:color-mix(in srgb, var(--peach) 48%, var(--white))}
 .stick-tabs.sub .ttab.on{background:var(--white);border-bottom:2px solid var(--white)}
 /* transactions view tabs: file-folder shapes (star = my default tab) */
-.ttabs{display:flex;gap:5px;border-bottom:2px solid var(--line);margin-bottom:8px;overflow-x:auto;padding-top:2px}
+.ttabs{display:flex;gap:5px;border-bottom:2px solid var(--line);margin-bottom:8px;overflow-x:auto;overflow-y:hidden;touch-action:pan-x;overscroll-behavior-x:contain;padding-top:2px}
+html{touch-action:manipulation}
 .ttab{display:flex;align-items:center;gap:6px;padding:9px 13px;background:var(--cream-2);color:var(--muted);font-family:var(--font-head);font-weight:600;font-size:.88rem;border:1px solid var(--line);border-bottom:none;border-radius:11px 11px 0 0;white-space:nowrap;margin-bottom:-2px}
 .ttab:hover{background:var(--cream)}
 .ttab.on{background:var(--white);color:var(--ink);border-top:2px solid var(--coral);padding-top:8px;border-bottom:2px solid var(--white)}
