@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build 2026-07-03a -->
+<!-- build 2026-07-03b -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#FCFCFA">
@@ -3495,6 +3495,16 @@ function screenMoneyDate(s){
   if($("#md-pause",wt))$("#md-pause",wt).onclick=e=>{e.preventDefault();MD_SESSION=false;CURRENT="dash";render();toast("Paused! Everything is saved. Come back any time 💛");};
   if($("#md-coachoff",wt))$("#md-coachoff",wt).onclick=async e=>{e.preventDefault();STATE.settings.mdCoachAlways=false;MD_SESSION=false;await saveState();render();toast("Coach Mode off! The compact checklist is all yours. Settings can bring it back.");};
   setTimeout(()=>{const n=document.getElementById("md-cur"); if(n)n.scrollIntoView({block:"center",behavior:"smooth"});},80);
+  // first-ever Money Date: introduce the Coach ONCE before the walk begins
+  if(coachOn && firstEverMD && firstPending>=0 && !STATE.settings.mdCoachIntroSeen){
+    STATE.settings.mdCoachIntroSeen=true; saveState();
+    const m=modal(`<h2>Meet your Coach 💛</h2>
+      <p class="small">It's your first Money Date, so I'm not letting go of your hand. Here's the deal: <b>one step at a time</b>. Whatever is glowing coral with the DO THIS NOW badge is your whole job. Finish it and the glow hops to the next step.</p>
+      <p class="small">If a step sends you to another screen, a coral bar stays at the top with directions and a button back. Need to stop mid-date? Hit pause at the bottom, everything saves itself!</p>
+      <p class="small">The whole loop takes about ten minutes. After this first one, you get to pick: keep the coaching or fly solo.</p>
+      <button class="btn coral block" id="coach-intro-go" style="margin-top:6px">Let's have a Money Date!</button>`);
+    $("#coach-intro-go",m.o).onclick=()=>m.close();
+  }
   $("#md-gosettings",wt).onclick=e=>{e.preventDefault();CURRENT="settings";render();};
   // tapping an account = "bring in its new stuff" -> import, pre-set to that account
   wt.querySelectorAll(".md-acct").forEach(b=>b.onclick=()=>importModal(b.dataset.id));
