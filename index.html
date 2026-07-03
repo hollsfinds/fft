@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build 2026-07-03v -->
+<!-- build 2026-07-03w -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#FCFCFA">
@@ -4682,12 +4682,12 @@ function resumeOnboarding(){
   const biz=STATE.businesses[0];
   OB={step:0,resume:true,data:{
     userName:STATE.user.name||"", bizName:biz.name||"",
-    entityType:biz.entityType, industry:biz.industry, sellsType:biz.sells||"products",
+    entityType:biz.entityType, industry:biz.industry, sellsType:biz.sells||"",
     tone:STATE.settings.tone, _roastOk:STATE.settings.tone==="roast", cashIncome:STATE.settings.cashIncome,
     setAsidePct:STATE.settings.setAsidePct, stateBufferPct:STATE.settings.stateBufferPct,
     quarterly:STATE.settings.quarterly!==false,
-    tracksMiles:STATE.settings.tracksMiles!==false,
-    md_tracks:STATE.settings.tracksMiles!==false?"yes":"no",
+    tracksMiles:STATE.settings.tracksMiles,
+    md_tracks:STATE.settings.tracksMiles===undefined?null:(STATE.settings.tracksMiles!==false?"yes":"no"),
     moneyDate:STATE.settings.moneyDate||null,
     md_freq:(STATE.settings.moneyDate||{}).freq||"",
     md_dow:(STATE.settings.moneyDate||{}).dow!=null?String(STATE.settings.moneyDate.dow):"",
