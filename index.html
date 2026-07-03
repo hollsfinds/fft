@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build 2026-07-04o -->
+<!-- build 2026-07-04p -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#FCFCFA">
@@ -4037,11 +4037,6 @@ function screenSettings(s){
     <button class="btn ghost block" id="se-exp">⬇ Export all transactions (CSV)</button></div>`));
   $("#se-exp",s).onclick=()=>exportTxns();
 
-  s.appendChild(el(`<div class="card" style="border-color:var(--bad)"><h2 style="color:var(--bad)">Danger zone</h2>
-    <div class="warnbox">Start over wipes EVERYTHING on this device: every transaction, account, and setting. There is no undo. Download a backup first if there's any chance you'll want this data again.</div>
-    <button class="btn block" id="se-reset" style="margin-top:10px;background:var(--bad);color:#fff">⚠ Start over (erase everything on this device)</button></div>`));
-  $("#se-reset",s).onclick=()=>resetPrompt();
-
   s.appendChild(el(`<div class="card"><h2>Hear about upgrades first 💌</h2>
     <p class="small muted">Cloud sync, more reports, and other good things are coming. The list lives on my site, this app never touches your email.</p>
     <a class="btn coral block" href="${CONFIG.upgradeUrl}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center">Get on the upgrade list ↗</a></div>`));
@@ -4053,6 +4048,13 @@ function screenSettings(s){
   legal.querySelector("#lg-tos").onclick=e=>{e.preventDefault();legalModal("tos");};
   legal.querySelector("#lg-priv").onclick=e=>{e.preventDefault();legalModal("privacy");};
   s.appendChild(legal);
+
+  // Danger zone lives at the very BOTTOM of the page (Holly's call), in a
+  // real red so it can't be mistaken for the brand coral
+  s.appendChild(el(`<div class="card" style="border:2px solid #E5484D"><h2 style="color:#E5484D">Danger zone</h2>
+    <div class="warnbox" style="background:color-mix(in srgb, #E5484D 10%, var(--white));border-color:color-mix(in srgb, #E5484D 38%, var(--white))">Start over wipes EVERYTHING on this device: every transaction, account, and setting. There is no undo. Download a backup first if there's any chance you'll want this data again.</div>
+    <button class="btn block" id="se-reset" style="margin-top:10px;background:#E5484D;color:#fff">⚠ Start over (erase everything on this device)</button></div>`));
+  $("#se-reset",s).onclick=()=>resetPrompt();
   }
 }
 function catModal(presetLine,onSave){
