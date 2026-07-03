@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build 2026-07-04c -->
+<!-- build 2026-07-04d -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#FCFCFA">
@@ -2119,7 +2119,11 @@ function wireCatSearch(inp, groupsFn, onPick){
       panel.appendChild(el(`<div class="catsug-h">${g.label}</div>`));
       hits.forEach(c=>{
         const it=el(`<div class="catsug-i">${esc(c.label)}</div>`);
-        it.onmousedown=e=>{ e.preventDefault(); inp.value=c.label; onPick(c); close(); };
+        // pointerdown keeps the input focused (iOS fires blur before mouse
+        // events on taps, which closed the panel under the finger); the PICK
+        // commits on click so touch-scrolling the list can't select anything
+        it.addEventListener("pointerdown",e=>e.preventDefault());
+        it.addEventListener("click",e=>{ e.preventDefault(); inp.value=c.label; onPick(c); close(); });
         panel.appendChild(it);
       });
     });
