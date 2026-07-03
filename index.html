@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build 2026-07-04g -->
+<!-- build 2026-07-04h -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#FCFCFA">
@@ -1686,7 +1686,7 @@ function render(){ renderNav(); const s=$("#screen"); s.innerHTML="";
   // landing on a different tab always starts at the top of the page
   if(CURRENT!==LAST_TAB){ window.scrollTo(0,0); LAST_TAB=CURRENT; }
   // remember where you are (page + sub-tabs) so a refresh puts you right back
-  try{ localStorage.setItem("fft_page",JSON.stringify({page:CURRENT,set:SET_TAB,acct:ACCT_TAB})); }catch(_){}
+  try{ localStorage.setItem("fft_page",JSON.stringify({page:CURRENT,set:SET_TAB,acct:ACCT_TAB,ts:Date.now()})); }catch(_){}
 }
 
 /* ---------------- DASHBOARD (hero screen, 6 widgets) ------------------ */
@@ -4984,7 +4984,10 @@ function launchApp(){
   CURRENT="dash";
   try{
     const p=JSON.parse(localStorage.getItem("fft_page")||"null");
-    if(p&&["dash","txns","accounts","taxes","reports","moneydate","settings"].includes(p.page)){
+    // quick reopen (under 30 min) = resume where you were; anything longer
+    // is a fresh visit and starts at Home for orientation (Holly's call)
+    const fresh=p&&p.ts&&(Date.now()-p.ts>30*60*1000);
+    if(!fresh&&p&&["dash","txns","accounts","taxes","reports","moneydate","settings"].includes(p.page)){
       CURRENT=p.page;
       if(p.set)SET_TAB=p.set;
       if(p.acct)ACCT_TAB=p.acct;
