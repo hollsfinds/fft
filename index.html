@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<!-- build 2026-07-04v -->
+<!-- build 2026-07-04w -->
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; manifest-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="theme-color" content="#FCFCFA">
@@ -159,6 +159,8 @@ button.qhelp.sm{padding:1px 9px;font-size:.75rem;border-radius:8px;margin-left:7
 
 /* header + nav */
 header.app{background:var(--white);color:var(--ink);padding:14px 0;padding-top:calc(14px + env(safe-area-inset-top));position:sticky;top:0;z-index:40;border-bottom:1px solid var(--line)}
+.hzone{display:flex;align-items:center;gap:8px;flex:0 0 324px;justify-content:center}
+@media(max-width:760px){.hzone{flex:0 1 auto;justify-content:flex-start}}
 header.app .wrap{display:flex;align-items:center;justify-content:space-between}
 .brand{font-family:var(--font-head);font-weight:600;letter-spacing:.02em;font-size:1.05rem;color:var(--ink)}
 .brand small{font-weight:500;opacity:.7;font-size:.7rem;display:block;letter-spacing:.06em}
@@ -503,9 +505,9 @@ html{touch-action:manipulation}
 <!-- ================= MAIN APP ================= -->
 <div id="app" class="hidden">
   <header class="app"><div class="hbar">
-    <div style="display:flex;align-items:center;gap:8px">
+    <div class="hzone">
       <button id="menubtn" class="menubtn" aria-label="Menu">☰</button>
-      <div class="brand"><svg viewBox="0 0 432 140" style="height:26px;display:block" aria-label="Hutch" role="img"><g transform="translate(4,10)"><rect width="120" height="120" rx="27" fill="#223A4E"/><rect x="22" y="22" width="76" height="76" rx="22" fill="none" stroke="#FCFCFA" stroke-width="7"/><path d="M45 40 v40 M75 40 v40" stroke="#FCFCFA" stroke-width="13" stroke-linecap="round"/><path d="M45 60 h30" stroke="#F28C6A" stroke-width="13" stroke-linecap="round"/></g><g transform="translate(-6,0)" stroke="currentColor" stroke-width="13" stroke-linecap="round" fill="none"><path d="M152 50 V90 M182 50 V90 M152 70 H182"/><path d="M204 50 V72 C204 97 234 97 234 72 V50"/><path d="M256 50 H286 M271 50 V90"/><path d="M338 58 C334 46 308 46 308 70 C308 94 334 94 338 82"/><path d="M360 50 V90 M390 50 V90 M360 70 H390"/></g><circle cx="406" cy="85" r="7" fill="#F28C6A"/></svg><small>a Juney &amp; Byrd tool</small></div>
+      <div class="brand"><svg viewBox="0 0 432 140" style="height:38px;display:block" aria-label="Hutch" role="img"><g transform="translate(4,10)"><rect width="120" height="120" rx="27" fill="#223A4E"/><rect x="22" y="22" width="76" height="76" rx="22" fill="none" stroke="#FCFCFA" stroke-width="7"/><path d="M45 40 v40 M75 40 v40" stroke="#FCFCFA" stroke-width="13" stroke-linecap="round"/><path d="M45 60 h30" stroke="#F28C6A" stroke-width="13" stroke-linecap="round"/></g><g transform="translate(-6,0)" stroke="currentColor" stroke-width="13" stroke-linecap="round" fill="none"><path d="M152 50 V90 M182 50 V90 M152 70 H182"/><path d="M204 50 V72 C204 97 234 97 234 72 V50"/><path d="M256 50 H286 M271 50 V90"/><path d="M338 58 C334 46 308 46 308 70 C308 94 334 94 338 82"/><path d="M360 50 V90 M390 50 V90 M360 70 H390"/></g><circle cx="406" cy="85" r="7" fill="#F28C6A"/></svg></div>
     </div>
     <button class="btn ghost sm" id="lockbtn">🔒 Lock</button>
   </div></header>
